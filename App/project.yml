@@ -1,6 +1,6 @@
 name: LoadoutApp
 options:
-  bundleIdPrefix: com.cardinalblue
+  bundleIdPrefix: com.simonlee
   deploymentTarget:
     macOS: "15.0"
   createIntermediateGroups: true

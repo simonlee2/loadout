@@ -19,14 +19,60 @@ final class RegistryStore {
     var lastActionError: String?
     private(set) var installing: Set<String> = []
 
-    let adapters: [any RegistryAdapter]
+    private(set) var adapters: [any RegistryAdapter]
     private let library: any SkillInstalling
     private let journal: ChangeJournal
+    private var registryPreferences: RegistryPreferences?
 
     init(adapters: [any RegistryAdapter], library: any SkillInstalling, journal: ChangeJournal) {
         self.adapters = adapters
         self.library = library
         self.journal = journal
+    }
+
+    // MARK: - User-added git registries
+
+    func configureGitMarketplaces(preferences: RegistryPreferences) {
+        registryPreferences = preferences
+        rebuildGitAdapters()
+    }
+
+    func addGitMarketplace(name: String, urlString: String) {
+        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+        let trimmedURL = urlString.trimmingCharacters(in: .whitespaces)
+        guard !trimmedName.isEmpty, !trimmedURL.isEmpty, URL(string: trimmedURL) != nil else {
+            lastActionError = "Enter a name and a valid git URL (https or ssh)."
+            return
+        }
+        registryPreferences?.add(name: trimmedName, url: trimmedURL)
+        rebuildGitAdapters()
+    }
+
+    /// Removable = user-added git registries only (id prefix "git:").
+    func canRemoveRegistry(id: String) -> Bool {
+        guard id.hasPrefix("git:"), let registryPreferences else { return false }
+        return adapters.contains { $0.id == id }
+            && !registryPreferences.entries.isEmpty
+    }
+
+    func removeRegistry(id: String) {
+        guard let preferences = registryPreferences else { return }
+        for entry in preferences.entries {
+            if let url = URL(string: entry.url),
+               GitMarketplaceAdapter(remoteURL: url, displayName: entry.name).id == id {
+                preferences.remove(url: entry.url)
+            }
+        }
+        browse.removeValue(forKey: id)
+        rebuildGitAdapters()
+    }
+
+    private func rebuildGitAdapters() {
+        adapters.removeAll { $0.id.hasPrefix("git:") }
+        for entry in registryPreferences?.entries ?? [] {
+            guard let url = URL(string: entry.url) else { continue }
+            adapters.append(GitMarketplaceAdapter(remoteURL: url, displayName: entry.name))
+        }
     }
 
     var lockEntries: [LockEntry] { library.lockEntries }

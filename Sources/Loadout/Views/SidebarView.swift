@@ -6,6 +6,8 @@ import UniformTypeIdentifiers
 struct SidebarView: View {
     let store: InventoryStore
     let registryStore: RegistryStore
+
+    @State private var isAddingRegistry = false
     let needsAttentionCount: Int
     @Binding var selection: SidebarSelection
 
@@ -92,14 +94,38 @@ struct SidebarView: View {
                 projectsHeader
             }
 
-            if !registryStore.adapters.isEmpty {
-                Section("Registries") {
-                    ForEach(registryStore.adapters, id: \.id) { adapter in
-                        Label(adapter.displayName, systemImage: "shippingbox")
-                            .tag(SidebarSelection.registry(id: adapter.id))
+            Section {
+                ForEach(registryStore.adapters, id: \.id) { adapter in
+                    Label(adapter.displayName, systemImage: "shippingbox")
+                        .tag(SidebarSelection.registry(id: adapter.id))
+                        .contextMenu {
+                            if registryStore.canRemoveRegistry(id: adapter.id) {
+                                Button("Remove Registry", role: .destructive) {
+                                    if selection == .registry(id: adapter.id) {
+                                        selection = .allSkills
+                                    }
+                                    registryStore.removeRegistry(id: adapter.id)
+                                }
+                            }
+                        }
+                }
+            } header: {
+                HStack {
+                    Text("Registries")
+                    Spacer()
+                    Button {
+                        isAddingRegistry = true
+                    } label: {
+                        Image(systemName: "plus")
                     }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                    .help("Add a git repo as a registry…")
                 }
             }
+        }
+        .sheet(isPresented: $isAddingRegistry) {
+            AddRegistrySheet(registryStore: registryStore)
         }
         .listStyle(.sidebar)
         .navigationTitle("Loadout")
@@ -216,5 +242,45 @@ struct SidebarView: View {
             Image(systemName: symbol)
         }
         .tag(tag)
+    }
+}
+
+/// Sheet for adding a git repo (company or personal) as a registry.
+private struct AddRegistrySheet: View {
+    let registryStore: RegistryStore
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var urlString = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Add Git Registry")
+                .font(.headline)
+            Text("Any git repo with skills works — a plugin marketplace or a plain folder of skills. Private repos use your normal git login.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Form {
+                TextField("Name", text: $name, prompt: Text("Team Skills"))
+                TextField("Git URL", text: $urlString, prompt: Text("https://github.com/org/skills.git"))
+                    .textContentType(.URL)
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                Button("Add") {
+                    registryStore.addGitMarketplace(name: name, urlString: urlString)
+                    dismiss()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty
+                    || urlString.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 440)
     }
 }

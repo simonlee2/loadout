@@ -93,15 +93,12 @@ public struct LoadoutApp: App {
             )
         }
         // WellKnownAdapter (the /.well-known/skills convention) stays unwired
-        // until a real site serves an index — add per-site instances here.
+        // until a real site serves an index. Git registries (company or
+        // personal repos) are user-added and stored in Application Support.
         let collection = CloudKitCollection()
         let store = RegistryStore(
             adapters: [
                 CollectionRegistryAdapter(collection: collection),
-                GitMarketplaceAdapter(
-                    remoteURL: URL(string: "https://github.com/cardinalblue/skills.git")!,
-                    displayName: "Cardinal Blue"
-                ),
                 SkillsShAdapter(),
                 ClawHubAdapter(),
             ],
@@ -109,6 +106,7 @@ public struct LoadoutApp: App {
             journal: journal
         )
         store.configureCollection(collection)
+        store.configureGitMarketplaces(preferences: RegistryPreferences())
         return store
     }
 

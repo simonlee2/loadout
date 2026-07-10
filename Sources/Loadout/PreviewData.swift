@@ -46,7 +46,7 @@ struct SampleScanner: AgentScanner {
             metadata: SkillMetadata(
                 name: "SwiftUI Patterns",
                 description: "Build macOS SwiftUI scenes and components with desktop patterns.",
-                extra: ["version": "1.4.0", "author": "cardinalblue", "license": "MIT"]
+                extra: ["version": "1.4.0", "author": "acme-corp", "license": "MIT"]
             ),
             isEnabled: true,
             lastModified: modified(daysAgo: 2)
@@ -268,13 +268,13 @@ struct PreviewRegistryAdapter: RegistryAdapter {
         ),
         RegistrySkill(
             registry: "skills.sh",
-            identifier: "cardinalblue/skills/code-review",
+            identifier: "acme-corp/skills/code-review",
             slug: "code-review",
             name: "Code Review",
             summary: "Review the current diff for correctness bugs and cleanups.",
             version: "2.0.1",
             installCount: 8_930,
-            sourceURL: URL(string: "https://skills.sh/cardinalblue/skills/code-review"),
+            sourceURL: URL(string: "https://skills.sh/acme-corp/skills/code-review"),
             audit: .passed
         ),
         RegistrySkill(
@@ -332,7 +332,7 @@ final class PreviewLibrary: SkillInstalling {
         LockEntry(
             slug: "swiftui-patterns",
             registry: "skills.sh",
-            identifier: "cardinalblue/skills/swiftui-patterns",
+            identifier: "acme-corp/skills/swiftui-patterns",
             version: "1.4.0",
             contentHash: "preview",
             fetchedAt: Date(),
@@ -343,7 +343,7 @@ final class PreviewLibrary: SkillInstalling {
         LockEntry(
             slug: "code-review",
             registry: "skills.sh",
-            identifier: "cardinalblue/skills/code-review",
+            identifier: "acme-corp/skills/code-review",
             version: "2.0.1",
             contentHash: "preview",
             fetchedAt: Date(),
