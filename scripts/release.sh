@@ -27,6 +27,17 @@ set -euo pipefail
 # ----------------------------------------------------------------------------
 TEAM_ID="T3LQ95726F"
 NOTARY_PROFILE="loadout-notary"
+# Keychain-free fallback: when these env vars are set (or the default ASC key
+# exists), notarize with the App Store Connect API key directly — useful when
+# the login keychain is locked (e.g. headless/locked-screen sessions).
+NOTARY_KEY_PATH="${NOTARY_KEY_PATH:-}"
+NOTARY_KEY_ID="${NOTARY_KEY_ID:-}"
+NOTARY_ISSUER="${NOTARY_ISSUER:-}"
+if [[ -n "$NOTARY_KEY_PATH" && -n "$NOTARY_KEY_ID" && -n "$NOTARY_ISSUER" ]]; then
+  NOTARY_ARGS=(--key "$NOTARY_KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER")
+else
+  NOTARY_ARGS=(--keychain-profile "$NOTARY_PROFILE")
+fi
 SCHEME="Loadout"
 APP_NAME="Loadout"
 
@@ -206,7 +217,7 @@ if $SKIP_NOTARIZE; then
   step "Notarize app — SKIPPED"
 else
   step "Notarize app"
-  if ! xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1; then
+  if ! xcrun notarytool history "${NOTARY_ARGS[@]}" >/dev/null 2>&1; then
     die "notarytool profile '$NOTARY_PROFILE' not found. Run once:
     xcrun notarytool store-credentials $NOTARY_PROFILE \\
       --apple-id <your-apple-id> --team-id $TEAM_ID --password <app-specific-password>
@@ -217,7 +228,7 @@ else
   APP_ZIP="$BUILD_DIR/$APP_NAME-$VERSION-app.zip"
   ditto -c -k --keepParent "$APP_PATH" "$APP_ZIP"
   info "Submitting app to notary service (waits for result)..."
-  xcrun notarytool submit "$APP_ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
+  xcrun notarytool submit "$APP_ZIP" "${NOTARY_ARGS[@]}" --wait
   xcrun stapler staple "$APP_PATH"
   info "App notarized and stapled."
 fi
@@ -248,7 +259,7 @@ if ! $DRY_RUN; then
   if ! $SKIP_NOTARIZE; then
     step "Notarize DMG"
     info "Submitting DMG to notary service (waits for result)..."
-    xcrun notarytool submit "$DMG_PATH" --keychain-profile "$NOTARY_PROFILE" --wait
+    xcrun notarytool submit "$DMG_PATH" "${NOTARY_ARGS[@]}" --wait
     xcrun stapler staple "$DMG_PATH"
     info "DMG notarized and stapled."
   fi
