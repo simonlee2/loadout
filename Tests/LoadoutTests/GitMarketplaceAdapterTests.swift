@@ -357,7 +357,7 @@ import Testing
     // MARK: KeychainCredential round-trip
 
     @Test func keychainWriteReadDeleteRoundTrip() throws {
-        let service = "com.cardinalblue.loadout.git.tests.\(UUID().uuidString)"
+        let service = "com.simonlee.loadout.git.tests.\(UUID().uuidString)"
         let account = "github.com/test/roundtrip"
         defer { try? KeychainCredential.delete(service: service, account: account) }
 

@@ -57,7 +57,7 @@ Two plists in `App/`:
   `CODE_SIGN_ENTITLEMENTS` in `project.yml`.
 - **`Loadout+CloudKit.entitlements`** — the real entitlements for later:
   `com.apple.developer.icloud-services = [CloudKit]` and
-  `com.apple.developer.icloud-container-identifiers = [iCloud.com.cardinalblue.Loadout]`.
+  `com.apple.developer.icloud-container-identifiers = [iCloud.com.simonlee.Loadout]`.
   Not wired up yet.
 
 Current signing settings (in `project.yml`) are `CODE_SIGN_STYLE = Automatic`
@@ -76,5 +76,5 @@ In `App/project.yml`, under the `Loadout` target's `settings.base`:
    `CODE_SIGN_ENTITLEMENTS: Loadout+CloudKit.entitlements`.
 
 Then re-run `xcodegen generate` and rebuild. The iCloud container
-`iCloud.com.cardinalblue.Loadout` must exist in the developer account and be
-enabled for the App ID `com.cardinalblue.Loadout`.
+`iCloud.com.simonlee.Loadout` must exist in the developer account and be
+enabled for the App ID `com.simonlee.Loadout`.

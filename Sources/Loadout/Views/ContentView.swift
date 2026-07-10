@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import os
 
 /// Root three-column layout: sidebar filter, inventory matrix, and detail.
 struct ContentView: View {
@@ -251,6 +252,12 @@ struct ContentView: View {
             Task { await registryStore.checkForUpdates() }
             // Wake the personal collection (checks entitlement + iCloud account).
             Task { await registryStore.activateCollection() }
+            // Live-test harness: LOADOUT_COLLECTION_TEST=<slug> publishes that
+            // skill to the collection, lists, downloads it back, verifies the
+            // tree hash, logs the outcome, and quits. Only runs when signed.
+            if let slug = ProcessInfo.processInfo.environment["LOADOUT_COLLECTION_TEST"] {
+                await runCollectionTest(slug: slug)
+            }
             // Snapshot harness: pre-select the first registry so the capture
             // shows the browser instead of the matrix.
             if ProcessInfo.processInfo.environment["LOADOUT_SNAPSHOT_REGISTRY"] != nil,
@@ -287,6 +294,45 @@ struct ContentView: View {
         if selectedRegistryID != nil { return "Search registry" }
         if selectedProject != nil { return "Search project skills" }
         return "Search skills"
+    }
+
+    // MARK: Collection live-test harness
+
+    @MainActor
+    private func runCollectionTest(slug: String) async {
+        let log = Logger(subsystem: "com.simonlee.loadout", category: "collection-test")
+        await registryStore.activateCollection()
+        guard let collection = registryStore.collection else {
+            log.error("COLLECTION-TEST no collection configured"); NSApp.terminate(nil); return
+        }
+        guard collection.isAvailable else {
+            log.error("COLLECTION-TEST unavailable: \(collection.unavailabilityReason ?? "?", privacy: .public)")
+            NSApp.terminate(nil); return
+        }
+        guard let installation = store.installations.first(where: { $0.slug == slug }) else {
+            log.error("COLLECTION-TEST skill \(slug, privacy: .public) not found"); NSApp.terminate(nil); return
+        }
+        do {
+            try await collection.publish(
+                slug: slug,
+                name: installation.displayName,
+                summary: installation.metadata.description,
+                directory: installation.directory
+            )
+            let skills = try await collection.list()
+            let temp = FileManager.default.temporaryDirectory
+                .appendingPathComponent("collection-test-\(slug)", isDirectory: true)
+            try? FileManager.default.removeItem(at: temp)
+            try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+            let hash = try await collection.download(slug: slug, to: temp)
+            let localHash = try TreeHash.hash(directory: installation.directory)
+            let ok = hash == localHash
+            log.notice("COLLECTION-TEST published=\(slug, privacy: .public) listed=\(skills.count) roundtrip=\(ok ? "HASH-OK" : "HASH-MISMATCH", privacy: .public)")
+            try? FileManager.default.removeItem(at: temp)
+        } catch {
+            log.error("COLLECTION-TEST failed: \(error.localizedDescription, privacy: .public)")
+        }
+        NSApp.terminate(nil)
     }
 
     // MARK: Filtering

@@ -1,7 +1,7 @@
 import Foundation
 
 /// One skill as stored in the user's personal, cross-machine collection.
-struct CollectionSkill: Identifiable, Hashable, Sendable {
+struct CollectionSkill: Identifiable, Hashable, Sendable, Codable {
     let slug: String
     let name: String
     let summary: String?

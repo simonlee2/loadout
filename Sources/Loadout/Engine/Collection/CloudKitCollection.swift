@@ -32,7 +32,7 @@ import Security
 final class CloudKitCollection: SkillCollection {
     /// MUST match the `com.apple.developer.icloud-container-identifiers`
     /// entry in Loadout's entitlement once the app is signed.
-    static let containerIdentifier = "iCloud.com.cardinalblue.Loadout"
+    static let containerIdentifier = "iCloud.com.simonlee.Loadout"
 
     /// The entitlement key whose presence proves the app can safely touch
     /// CloudKit without trapping.
@@ -114,41 +114,56 @@ final class CloudKitCollection: SkillCollection {
 
     // MARK: SkillCollection
 
+    // CloudKit's auto-created schema doesn't allow whole-type queries
+    // (recordName isn't queryable), so the collection maintains its own
+    // index record — everything is fetched by ID, which needs no indexes.
+    private static let indexRecordName = "collection-index"
+    private static let indexRecordType = "CollectionIndex"
+    private static let indexEntriesField = "entries"
+
     func list() async throws -> [CollectionSkill] {
         let database = try requireDatabase()
-        let query = CKQuery(recordType: Self.recordType, predicate: NSPredicate(value: true))
-        var skills: [CollectionSkill] = []
-        // Exclude the (large) asset field for a fast listing.
-        let desiredKeys = [Field.name, Field.summary, Field.contentHash]
+        let index = try await fetchIndexRecord(database)
+        return Self.decodeIndexEntries(index).sorted { $0.slug < $1.slug }
+    }
+
+    private func fetchIndexRecord(_ database: CKDatabase) async throws -> CKRecord? {
         do {
-            var cursorState: CKQueryOperation.Cursor?
-            var firstPage = true
-            repeat {
-                let (matchResults, cursor): ([(CKRecord.ID, Result<CKRecord, Error>)], CKQueryOperation.Cursor?)
-                if firstPage {
-                    (matchResults, cursor) = try await database.records(
-                        matching: query, desiredKeys: desiredKeys, resultsLimit: CKQueryOperation.maximumResults
-                    )
-                    firstPage = false
-                } else if let state = cursorState {
-                    (matchResults, cursor) = try await database.records(
-                        continuingMatchFrom: state, desiredKeys: desiredKeys,
-                        resultsLimit: CKQueryOperation.maximumResults
-                    )
-                } else {
-                    break
-                }
-                for (_, result) in matchResults {
-                    if case .success(let record) = result, let skill = Self.skill(from: record) {
-                        skills.append(skill)
-                    }
-                }
-                cursorState = cursor
-            } while cursorState != nil
+            return try await database.record(for: CKRecord.ID(recordName: Self.indexRecordName))
+        } catch let error as CKError where error.code == .unknownItem {
+            return nil
         } catch {
             throw Self.map(error)
         }
-        return skills.sorted { $0.slug < $1.slug }
+    }
+
+    private static func decodeIndexEntries(_ record: CKRecord?) -> [CollectionSkill] {
+        guard let json = record?[indexEntriesField] as? String,
+              let data = json.data(using: .utf8)
+        else { return [] }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return (try? decoder.decode([CollectionSkill].self, from: data)) ?? []
+    }
+
+    private func saveIndex(_ entries: [CollectionSkill], database: CKDatabase) async throws {
+        let record = try await fetchIndexRecord(database)
+            ?? CKRecord(
+                recordType: Self.indexRecordType,
+                recordID: CKRecord.ID(recordName: Self.indexRecordName)
+            )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(entries.sorted { $0.slug < $1.slug })
+        record[Self.indexEntriesField] = String(data: data, encoding: .utf8)! as CKRecordValue
+        do {
+            _ = try await database.modifyRecords(
+                saving: [record], deleting: [], savePolicy: .allKeys, atomically: true
+            )
+        } catch {
+            throw Self.map(error)
+        }
     }
 
     func publish(slug: String, name: String, summary: String?, directory: URL) async throws {
@@ -181,6 +196,14 @@ final class CloudKitCollection: SkillCollection {
         } catch {
             throw Self.map(error)
         }
+
+        var entries = Self.decodeIndexEntries(try await fetchIndexRecord(database))
+        entries.removeAll { $0.slug == slug }
+        entries.append(CollectionSkill(
+            slug: slug, name: name, summary: summary,
+            contentHash: contentHash, updatedAt: Date()
+        ))
+        try await saveIndex(entries, database: database)
     }
 
     @discardableResult
@@ -224,6 +247,10 @@ final class CloudKitCollection: SkillCollection {
         } catch {
             throw Self.map(error)
         }
+
+        var entries = Self.decodeIndexEntries(try await fetchIndexRecord(database))
+        entries.removeAll { $0.slug == slug }
+        try await saveIndex(entries, database: database)
     }
 
     // MARK: Seam / mapping

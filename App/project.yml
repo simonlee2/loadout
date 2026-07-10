@@ -24,7 +24,7 @@ targets:
         product: LoadoutKit
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.cardinalblue.Loadout
+        PRODUCT_BUNDLE_IDENTIFIER: com.simonlee.Loadout
         PRODUCT_NAME: Loadout
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
@@ -34,8 +34,9 @@ targets:
         # DEVELOPMENT_TEAM to the team id, drop CODE_SIGN_IDENTITY "-", and
         # swap CODE_SIGN_ENTITLEMENTS to Loadout+CloudKit.entitlements.
         CODE_SIGN_STYLE: Automatic
-        CODE_SIGN_IDENTITY: "-"
-        CODE_SIGN_ENTITLEMENTS: Loadout.entitlements
+        DEVELOPMENT_TEAM: T3LQ95726F
+        
+        CODE_SIGN_ENTITLEMENTS: Loadout+CloudKit.entitlements
         # Real signing swaps the line above for:
         # CODE_SIGN_ENTITLEMENTS: Loadout+CloudKit.entitlements
         # DEVELOPMENT_TEAM: <TEAMID>

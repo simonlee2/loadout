@@ -132,7 +132,7 @@ enum GitRemoteSlug {
 /// integrator can store one programmatically.
 enum KeychainCredential {
     /// Shared service string for all Loadout git credentials.
-    static let defaultService = "com.cardinalblue.loadout.git"
+    static let defaultService = "com.simonlee.loadout.git"
 
     /// Reads the token for `account`, or nil when absent.
     static func read(service: String, account: String) -> String? {

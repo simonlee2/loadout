@@ -71,7 +71,7 @@ final class InventoryStore {
         let byAgent = AgentID.allCases
             .map { agent in "\(agent.rawValue)=\(result.installs.count { $0.agent == agent })" }
             .joined(separator: " ")
-        Logger(subsystem: "com.cardinalblue.loadout", category: "scan")
+        Logger(subsystem: "com.simonlee.loadout", category: "scan")
             .notice("scan complete: \(result.installs.count) installations (\(byAgent)) errors=\(result.errors.count)")
     }
 
