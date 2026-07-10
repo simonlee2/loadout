@@ -6,10 +6,11 @@ import AppKit
 struct DetailView: View {
     let row: SkillRow?
     let store: InventoryStore
+    let registryStore: RegistryStore
 
     var body: some View {
         if let row {
-            SkillDetailView(row: row, store: store)
+            SkillDetailView(row: row, store: store, registryStore: registryStore)
                 .id(row.id)
         } else {
             ContentUnavailableView(
@@ -40,10 +41,25 @@ private enum DocumentState {
 private struct SkillDetailView: View {
     let row: SkillRow
     let store: InventoryStore
+    let registryStore: RegistryStore
 
     @State private var selectedAgent: AgentID?
     @State private var document: DocumentState = .loading
     @State private var confirmingUninstall = false
+    @State private var adopting = false
+
+    /// Agents that don't yet have this skill — candidates for "sync to".
+    private var otherAgents: [AgentID] {
+        let present = Set(row.installations.map(\.agent))
+        return AgentID.allCases.filter { !present.contains($0) }
+    }
+
+    /// Adopt is offered only for skills that are entirely user-scoped and not
+    /// already tracked by the library.
+    private var canAdopt: Bool {
+        row.installations.allSatisfy { $0.origin == .user }
+            && !registryStore.lockEntries.contains { $0.slug == row.slug }
+    }
 
     /// The installation whose file we're viewing. Falls back to the first.
     private var installation: SkillInstallation? {
@@ -108,6 +124,13 @@ private struct SkillDetailView: View {
         HStack(spacing: 12) {
             SkillEnableToggle(installation: installation, store: store, showsLabel: true)
 
+            if canAdopt {
+                Button("Adopt & Sync…") {
+                    adopting = true
+                }
+                .disabled(store.isScanning)
+            }
+
             if store.canUninstall(installation) {
                 Button("Uninstall…", role: .destructive) {
                     confirmingUninstall = true
@@ -118,6 +141,13 @@ private struct SkillDetailView: View {
             Spacer()
         }
         .padding(.top, 4)
+        .sheet(isPresented: $adopting) {
+            AdoptSheet(
+                installation: installation,
+                otherAgents: otherAgents,
+                registryStore: registryStore
+            )
+        }
         .confirmationDialog(
             "Move \(installation.slug) to Loadout's shelf?",
             isPresented: $confirmingUninstall,
@@ -233,6 +263,64 @@ private struct SkillDetailView: View {
         }
         document = .loading
         document = DocumentState(await SkillDocumentLoader.load(directory: installation.directory))
+    }
+}
+
+/// Confirmation sheet for adopting an unmanaged skill into Loadout's library,
+/// with optional additional agents to link it into.
+private struct AdoptSheet: View {
+    let installation: SkillInstallation
+    let otherAgents: [AgentID]
+    let registryStore: RegistryStore
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedAgents: Set<AgentID> = []
+    @State private var isAdopting = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Adopt \(installation.displayName)")
+                .font(.title3.weight(.semibold))
+
+            Text("Moves the skill into Loadout's library and links it back — agents see the identical files. Optionally also link it into:")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if otherAgents.isEmpty {
+                Text("Every agent already has this skill.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(otherAgents) { agent in
+                        Toggle(agent.displayName, isOn: Binding(
+                            get: { selectedAgents.contains(agent) },
+                            set: { on in
+                                if on { selectedAgents.insert(agent) }
+                                else { selectedAgents.remove(agent) }
+                            }
+                        ))
+                    }
+                }
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Adopt & Sync") {
+                    isAdopting = true
+                    Task {
+                        await registryStore.adopt(installation, syncTo: Array(selectedAgents))
+                        dismiss()
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(isAdopting)
+            }
+        }
+        .padding(20)
+        .frame(width: 380)
     }
 }
 

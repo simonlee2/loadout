@@ -103,6 +103,29 @@ struct SkillsShAdapter: RegistryAdapter {
         }
     }
 
+    // MARK: Updates
+
+    /// Current upstream commit SHA for a skills.sh-managed lock entry.
+    ///
+    /// `fetch` records the repo HEAD commit SHA as the entry's provenance
+    /// version, so the honest comparator is the repo's CURRENT HEAD — one
+    /// request: `GET /repos/{owner}/{repo}/commits/HEAD` (the entry's
+    /// identifier is "owner/repo/skillId"). Returns nil, without touching the
+    /// network, for entries from other registries or with an identifier too
+    /// short to name a repository. Hard failures (HTTP errors, transport
+    /// errors, undecodable bodies) throw so callers can distinguish "no
+    /// update" from "couldn't check".
+    func latestVersion(for entry: LockEntry) async throws -> String? {
+        guard entry.registry == id else { return nil }
+        let parts = entry.identifier.split(separator: "/")
+        guard parts.count >= 2 else { return nil }
+        let source = parts.prefix(2).joined(separator: "/")
+        let endpoint = "https://api.github.com/repos/\(source)/commits/HEAD"
+        let data = try await getJSON(endpoint, accept: "application/vnd.github+json")
+        let commit: GitHubCommit = try decode(data, endpoint: endpoint)
+        return commit.sha
+    }
+
     /// "owner/repo" for a skill, derived from its "owner/repo/skillId" identifier
     /// by dropping the trailing slug.
     private func repoSource(for skill: RegistrySkill) -> String {

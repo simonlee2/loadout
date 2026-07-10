@@ -6,7 +6,19 @@ struct MatrixView: View {
     let rows: [SkillRow]
     let agents: [AgentID]
     let store: InventoryStore
+    let lockVersions: [String: String]
+    let updatesAvailable: [String: String]
+    let statusCache: RowStatusCache
     @Binding var selection: SkillRow.ID?
+
+    private func status(for row: SkillRow) -> RowStatus {
+        RowStatus.compute(
+            row,
+            lockVersions: lockVersions,
+            updatesAvailable: updatesAvailable,
+            cache: statusCache
+        )
+    }
 
     var body: some View {
         Group {
@@ -27,7 +39,7 @@ struct MatrixView: View {
             TableColumn("Skill") { row in
                 SkillCell(row: row)
             }
-            .width(min: 220, ideal: 300)
+            .width(min: 190, ideal: 220)
 
             TableColumnForEach(agents) { agent in
                 TableColumn(agent.displayName) { (row: SkillRow) in
@@ -39,7 +51,12 @@ struct MatrixView: View {
             TableColumn("Origin") { row in
                 OriginCell(row: row)
             }
-            .width(min: 120, ideal: 180)
+            .width(min: 110, ideal: 130)
+
+            TableColumn("Status") { row in
+                StatusCell(status: status(for: row))
+            }
+            .width(min: 100, ideal: 120)
         }
     }
 }

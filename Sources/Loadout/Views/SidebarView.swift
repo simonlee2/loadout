@@ -5,6 +5,7 @@ import SwiftUI
 struct SidebarView: View {
     let store: InventoryStore
     let registryStore: RegistryStore
+    let needsAttentionCount: Int
     @Binding var selection: SidebarSelection
 
     private var rows: [SkillRow] { store.rows }
@@ -31,6 +32,13 @@ struct SidebarView: View {
                     symbol: "square.grid.2x2",
                     count: rows.count,
                     tag: .allSkills
+                )
+
+                sidebarRow(
+                    title: "Needs Attention",
+                    symbol: "exclamationmark.triangle",
+                    count: needsAttentionCount,
+                    tag: .needsAttention
                 )
 
                 ForEach(presentOriginKinds) { kind in

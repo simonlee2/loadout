@@ -236,6 +236,13 @@ struct PreviewRegistryAdapter: RegistryAdapter {
         throw PreviewError.notImplemented
     }
 
+    /// Reports a newer version for "code-review" so `checkForUpdates()`
+    /// populates one update badge in sample mode; every other managed entry is
+    /// already current.
+    func latestVersion(for entry: LockEntry) async throws -> String? {
+        entry.slug == "code-review" ? "2.1.0" : entry.version
+    }
+
     enum PreviewError: LocalizedError {
         case notImplemented
         var errorDescription: String? { "preview" }
@@ -246,7 +253,33 @@ struct PreviewRegistryAdapter: RegistryAdapter {
 /// 1s delay so the install spinner is visible. Never touches disk.
 @MainActor
 final class PreviewLibrary: SkillInstalling {
-    private(set) var lockEntries: [LockEntry] = []
+    /// Two pre-adopted skills so sample mode shows a "Managed" chip
+    /// (swiftui-patterns, current) and — once `checkForUpdates()` runs — an
+    /// "Update" chip (code-review, whose adapter reports a newer version).
+    private(set) var lockEntries: [LockEntry] = [
+        LockEntry(
+            slug: "swiftui-patterns",
+            registry: "skills.sh",
+            identifier: "cardinalblue/skills/swiftui-patterns",
+            version: "1.4.0",
+            contentHash: "preview",
+            fetchedAt: Date(),
+            deployments: AgentID.allCases.map {
+                Deployment(agent: $0, path: "/preview/\($0.rawValue)/swiftui-patterns", kind: .symlink)
+            }
+        ),
+        LockEntry(
+            slug: "code-review",
+            registry: "skills.sh",
+            identifier: "cardinalblue/skills/code-review",
+            version: "2.0.1",
+            contentHash: "preview",
+            fetchedAt: Date(),
+            deployments: AgentID.allCases.map {
+                Deployment(agent: $0, path: "/preview/\($0.rawValue)/code-review", kind: .symlink)
+            }
+        ),
+    ]
 
     func install(
         _ skill: RegistrySkill,
@@ -271,5 +304,26 @@ final class PreviewLibrary: SkillInstalling {
 
     func remove(slug: String, journal: ChangeJournal) async throws {
         lockEntries.removeAll { $0.slug == slug }
+    }
+
+    func adopt(
+        _ installation: SkillInstallation,
+        syncTo agents: [AgentID],
+        journal: ChangeJournal
+    ) async throws {
+        try await Task.sleep(for: .seconds(1))
+        let targets = ([installation.agent] + agents)
+        let entry = LockEntry(
+            slug: installation.slug,
+            registry: "local",
+            identifier: installation.slug,
+            version: "adopted",
+            contentHash: "preview",
+            fetchedAt: Date(),
+            deployments: targets.map {
+                Deployment(agent: $0, path: "/preview/\($0.rawValue)/\(installation.slug)", kind: .symlink)
+            }
+        )
+        lockEntries.append(entry)
     }
 }

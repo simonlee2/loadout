@@ -55,6 +55,7 @@ extension AgentID {
 /// `.registry` — swaps the content column over to the registry browser.
 enum SidebarSelection: Hashable {
     case allSkills
+    case needsAttention
     case origin(OriginKind)
     case agent(AgentID)
     case registry(id: String)

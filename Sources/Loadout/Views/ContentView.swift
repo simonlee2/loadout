@@ -11,6 +11,7 @@ struct ContentView: View {
     @State private var selectedRowID: SkillRow.ID?
     @State private var selectedRegistrySkillID: RegistrySkill.ID?
     @State private var searchText = ""
+    @State private var statusCache = RowStatusCache()
     // Snapshot/autodrive harnesses: vibrant sidebar content can't render
     // offscreen, so captures collapse it rather than show a blank column.
     @State private var columnVisibility: NavigationSplitViewVisibility =
@@ -21,6 +22,24 @@ struct ContentView: View {
     /// Rows after applying the sidebar filter and the search field.
     private var visibleRows: [SkillRow] {
         store.rows.filter { matchesSidebar($0) && matchesSearch($0) }
+    }
+
+    /// slug → managed version, from the library's lockfile.
+    private var lockVersions: [String: String] {
+        Dictionary(registryStore.lockEntries.map { ($0.slug, $0.version) }) { first, _ in first }
+    }
+
+    /// Rows flagged for the "Needs Attention" smart list (update / differs /
+    /// dangling symlink). Count feeds the sidebar badge; also used to filter.
+    private var needsAttentionRows: [SkillRow] {
+        store.rows.filter {
+            RowStatus.needsAttention(
+                $0,
+                lockVersions: lockVersions,
+                updatesAvailable: registryStore.updatesAvailable,
+                cache: statusCache
+            )
+        }
     }
 
     private var selectedRow: SkillRow? {
@@ -41,8 +60,13 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            SidebarView(store: store, registryStore: registryStore, selection: $sidebarSelection)
-                .navigationSplitViewColumnWidth(min: 200, ideal: 240)
+            SidebarView(
+                store: store,
+                registryStore: registryStore,
+                needsAttentionCount: needsAttentionRows.count,
+                selection: $sidebarSelection
+            )
+            .navigationSplitViewColumnWidth(min: 200, ideal: 240)
         } content: {
             Group {
                 if let registryID = selectedRegistryID {
@@ -58,6 +82,9 @@ struct ContentView: View {
                             rows: visibleRows,
                             agents: store.activeAgents,
                             store: store,
+                            lockVersions: lockVersions,
+                            updatesAvailable: registryStore.updatesAvailable,
+                            statusCache: statusCache,
                             selection: $selectedRowID
                         )
                         Divider()
@@ -75,10 +102,10 @@ struct ContentView: View {
                         store: registryStore
                     )
                 } else {
-                    DetailView(row: selectedRow, store: store)
+                    DetailView(row: selectedRow, store: store, registryStore: registryStore)
                 }
             }
-            .navigationSplitViewColumnWidth(min: 320, ideal: 380)
+            .navigationSplitViewColumnWidth(min: 320, ideal: 380, max: 400)
         }
         .onChange(of: sidebarSelection) { selectedRegistrySkillID = nil }
         .searchable(
@@ -100,6 +127,20 @@ struct ContentView: View {
                 }
                 .disabled(store.isScanning)
                 .help("Rescan for installed skills")
+            }
+            ToolbarItem(placement: .automatic) {
+                Button {
+                    Task { await registryStore.checkForUpdates() }
+                } label: {
+                    if registryStore.isCheckingUpdates {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Label("Check for Updates", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                }
+                .disabled(registryStore.isCheckingUpdates)
+                .help("Check for updates")
             }
             ToolbarItem(placement: .automatic) {
                 Button {
@@ -136,6 +177,9 @@ struct ContentView: View {
         }
         .task {
             await store.rescan()
+            // Kick off a non-blocking update check now that the first scan has
+            // populated the inventory (badges/status fill in as it resolves).
+            Task { await registryStore.checkForUpdates() }
             // Snapshot harness: pre-select the first registry so the capture
             // shows the browser instead of the matrix.
             if ProcessInfo.processInfo.environment["LOADOUT_SNAPSHOT_REGISTRY"] != nil,
@@ -161,6 +205,13 @@ struct ContentView: View {
         switch sidebarSelection {
         case .allSkills:
             return true
+        case .needsAttention:
+            return RowStatus.needsAttention(
+                row,
+                lockVersions: lockVersions,
+                updatesAvailable: registryStore.updatesAvailable,
+                cache: statusCache
+            )
         case .origin(let kind):
             return row.installations.contains { $0.origin.kind == kind }
         case .agent(let agent):

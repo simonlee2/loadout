@@ -9,6 +9,9 @@ enum SkillLibraryError: Error, LocalizedError, CustomStringConvertible {
     case deploymentCollision(slug: String, agent: AgentID, path: String)
     case invalidSkill(slug: String, reason: String)
     case notInstalled(slug: String)
+    case adoptUnsupportedOrigin(slug: String, origin: String)
+    case adoptSourceMissing(slug: String, path: String)
+    case adoptSourceIsSymlink(slug: String, path: String)
 
     var description: String {
         switch self {
@@ -24,6 +27,12 @@ enum SkillLibraryError: Error, LocalizedError, CustomStringConvertible {
             return "Fetched skill \"\(slug)\" is invalid: \(reason)."
         case .notInstalled(let slug):
             return "Skill \"\(slug)\" is not in the library."
+        case .adoptUnsupportedOrigin(let slug, let origin):
+            return "Skill \"\(slug)\" is a \(origin) skill; only user-scope skills can be adopted."
+        case .adoptSourceMissing(let slug, let path):
+            return "Skill \"\(slug)\" has no directory at \(path); nothing to adopt."
+        case .adoptSourceIsSymlink(let slug, let path):
+            return "Skill \"\(slug)\" at \(path) is already a symlink; it looks managed already."
         }
     }
 
@@ -50,6 +59,10 @@ enum SkillLibraryError: Error, LocalizedError, CustomStringConvertible {
 /// - `remove` shelves the library copy via `recordDirectoryMove` (content
 ///   preserved, reversible) and then deletes the deployment symlinks
 ///   un-journaled. See `remove(slug:journal:)` for the reversibility limit.
+/// - `adopt` journals a `pathAdd` ONLY for each additional sync symlink; the
+///   library move and the origin-replacement symlink are deliberately not
+///   journaled so no revert can ever delete the only copy of the user's
+///   content. See `adopt(_:syncTo:journal:)` for the full design.
 @MainActor
 @Observable
 final class SkillLibrary: SkillInstalling {
@@ -201,6 +214,148 @@ final class SkillLibrary: SkillInstalling {
             }
             lockEntries = entriesSnapshot
             try? FileManager.default.removeItem(at: tempDir)
+            throw error
+        }
+    }
+
+    // MARK: - Adopt
+
+    /// Adopts an existing UNMANAGED user skill into the library (D1's
+    /// adopt-later, D2's sync): `installation.directory` is MOVED to
+    /// `<library>/<slug>`, a symlink to that copy replaces it at the original
+    /// location (so the origin agent sees identical content at the same
+    /// path), and each `syncTo` agent's skills root gets its own symlink.
+    /// The lock entry records registry "local", the original path as the
+    /// identifier, and version `local-<first 12 contentHash chars>`.
+    ///
+    /// Reversibility design — the no-content-loss invariant: no sequence of
+    /// journal reverts may ever delete the only copy of the user's skill
+    /// content. A `pathAdd` for the library copy would delete that content on
+    /// revert, and reverting the origin-replacement symlink's `pathAdd` after
+    /// it would leave nothing anywhere. The library move and the replacement
+    /// symlink are therefore NOT journaled; only the *additional* sync
+    /// symlinks are (`pathAdd` each — pure links whose deletion never touches
+    /// content). The reversal path for the adopt itself is
+    /// `remove(slug:journal:)`, which shelves the library copy via
+    /// `recordDirectoryMove` (content preserved and restorable).
+    ///
+    /// A mid-adopt failure (e.g. a collision with an unmanaged same-slug
+    /// directory in a `syncTo` agent) restores the original state best-effort
+    /// — created sync symlinks are reverted, the replacement symlink is
+    /// removed, and the directory is moved back — before rethrowing.
+    func adopt(
+        _ installation: SkillInstallation,
+        syncTo agents: [AgentID],
+        journal: ChangeJournal
+    ) async throws {
+        let slug = installation.slug
+        let originalDir = installation.directory
+        let fileManager = FileManager.default
+
+        // 1. Preconditions — all checked before anything is touched.
+        guard installation.origin == .user else {
+            throw SkillLibraryError.adoptUnsupportedOrigin(
+                slug: slug, origin: installation.origin.label
+            )
+        }
+        guard !lockEntries.contains(where: { $0.slug == slug }) else {
+            throw SkillLibraryError.alreadyInstalled(slug: slug)
+        }
+        var info = stat()
+        guard lstat(originalDir.path, &info) == 0 else {
+            throw SkillLibraryError.adoptSourceMissing(slug: slug, path: originalDir.path)
+        }
+        // lstat, so a symlink (e.g. already pointing into the library) is
+        // seen as such and never followed.
+        guard (info.st_mode & S_IFMT) != S_IFLNK else {
+            throw SkillLibraryError.adoptSourceIsSymlink(slug: slug, path: originalDir.path)
+        }
+        guard (info.st_mode & S_IFMT) == S_IFDIR else {
+            throw SkillLibraryError.invalidSkill(slug: slug, reason: "source path is not a directory")
+        }
+        let libraryDir = directory.appendingPathComponent(slug, isDirectory: true)
+        guard !pathExists(libraryDir) else {
+            throw SkillLibraryError.alreadyInstalled(slug: slug)
+        }
+        // The origin agent's root got the replacement symlink, so it is
+        // skipped; duplicates are collapsed. Sync collisions are checked
+        // per-agent inside the mutation loop below (they surface after the
+        // move and exercise the restore path).
+        var seen = Set<AgentID>()
+        let syncAgents = agents.filter { $0 != installation.agent && seen.insert($0).inserted }
+        for agent in syncAgents where deployRoots[agent] == nil {
+            throw SkillLibraryError.unknownAgent(agent)
+        }
+
+        // 2. Mutations. On any failure, restore the original state
+        // best-effort and rethrow.
+        let entriesSnapshot = lockEntries
+        var createdChanges: [ConfigChange] = []
+        var movedToLibrary = false
+        var originLinkCreated = false
+        do {
+            // Move the user's directory into the library — un-journaled by
+            // design (see the doc comment); `remove(slug:)` is the reversal.
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            try fileManager.moveItem(at: originalDir, to: libraryDir)
+            movedToLibrary = true
+
+            // Replace the original location with a symlink to the copy —
+            // also un-journaled (reverting it would strand the content).
+            try fileManager.createSymbolicLink(at: originalDir, withDestinationURL: libraryDir)
+            originLinkCreated = true
+
+            let contentHash = try TreeHash.hash(directory: libraryDir)
+
+            var deployments = [
+                Deployment(agent: installation.agent, path: originalDir.path, kind: .symlink)
+            ]
+            for agent in syncAgents {
+                let root = deployRoots[agent]!
+                // Create the parent skills dir if absent — NOT journaled.
+                try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+                let linkURL = root.appendingPathComponent(slug, isDirectory: true)
+                if pathExists(linkURL) {
+                    throw SkillLibraryError.deploymentCollision(
+                        slug: slug, agent: agent, path: linkURL.path
+                    )
+                }
+                let change = try journal.recordPathAdd(
+                    agent: agent,
+                    summary: "Sync adopted skill \(slug) to \(agent.displayName)",
+                    path: linkURL
+                )
+                createdChanges.append(change)
+                try fileManager.createSymbolicLink(at: linkURL, withDestinationURL: libraryDir)
+                deployments.append(Deployment(agent: agent, path: linkURL.path, kind: .symlink))
+            }
+
+            let entry = LockEntry(
+                slug: slug,
+                registry: "local",
+                identifier: originalDir.path,
+                version: "local-\(contentHash.prefix(12))",
+                contentHash: contentHash,
+                fetchedAt: Date(),
+                deployments: deployments
+            )
+            lockEntries.append(entry)
+            lockEntries.sort { $0.slug < $1.slug }
+            try persist()
+        } catch {
+            // Best-effort restore: sync symlinks first (journal reverts),
+            // then the replacement symlink (frees the original path), then
+            // move the content back where it came from.
+            for change in createdChanges.reversed() {
+                try? journal.revert(change)
+            }
+            if originLinkCreated {
+                try? fileManager.removeItem(at: originalDir)
+            }
+            if movedToLibrary {
+                try? fileManager.moveItem(at: libraryDir, to: originalDir)
+            }
+            lockEntries = entriesSnapshot
             throw error
         }
     }
