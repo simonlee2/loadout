@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Loadout
+@testable import LoadoutKit
 
 @Suite struct CodexScannerTests {
     @Test func systemSkillsGetSystemOrigin() throws {

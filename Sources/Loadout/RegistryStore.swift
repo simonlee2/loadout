@@ -61,6 +61,36 @@ final class RegistryStore {
         await run(adapter, query: trimmed) { try await adapter.search(trimmed) }
     }
 
+    // MARK: - Personal collection
+
+    private(set) var collection: (any SkillCollection)?
+
+    var collectionAvailable: Bool { collection?.isAvailable ?? false }
+    var collectionUnavailabilityReason: String? { collection?.unavailabilityReason }
+
+    func configureCollection(_ collection: any SkillCollection) {
+        self.collection = collection
+    }
+
+    func activateCollection() async {
+        await collection?.activate()
+    }
+
+    /// Publishes one installed skill's files into the personal collection.
+    func publishToCollection(_ installation: SkillInstallation) async {
+        guard let collection else { return }
+        do {
+            try await collection.publish(
+                slug: installation.slug,
+                name: installation.displayName,
+                summary: installation.metadata.description,
+                directory: installation.directory
+            )
+        } catch {
+            lastActionError = "Publish failed: \(error.localizedDescription)"
+        }
+    }
+
     /// slug → newer upstream version, from the last `checkForUpdates`.
     private(set) var updatesAvailable: [String: String] = [:]
     private(set) var isCheckingUpdates = false

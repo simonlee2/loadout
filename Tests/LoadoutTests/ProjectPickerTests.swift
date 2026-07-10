@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Loadout
+@testable import LoadoutKit
 
 /// A minimal in-memory `ProjectOverriding` whose auto-detected project list is
 /// fully controllable, so the store's combination logic can be exercised

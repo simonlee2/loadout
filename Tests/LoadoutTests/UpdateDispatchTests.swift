@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Loadout
+@testable import LoadoutKit
 
 /// stageUpdate/applyUpdate must be protocol REQUIREMENTS: RegistryStore holds
 /// the library as `any SkillInstalling`, and extension-only methods would

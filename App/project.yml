@@ -1,0 +1,66 @@
+name: LoadoutApp
+options:
+  bundleIdPrefix: com.cardinalblue
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+
+packages:
+  # Depend on the local SwiftPM package at the repo root (one level up from App/).
+  LoadoutKit:
+    path: ..
+
+targets:
+  Loadout:
+    type: application
+    platform: macOS
+    deploymentTarget: "15.0"
+    sources:
+      # Only the tiny app entry point lives in the xcodeproj; all real code is
+      # in the LoadoutKit SwiftPM library.
+      - path: LoadoutAppShell
+    dependencies:
+      - package: LoadoutKit
+        product: LoadoutKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.cardinalblue.Loadout
+        PRODUCT_NAME: Loadout
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "6.0"
+        # Ad-hoc signing so the app builds without a developer account. When
+        # real signing lands: keep CODE_SIGN_STYLE Automatic, set
+        # DEVELOPMENT_TEAM to the team id, drop CODE_SIGN_IDENTITY "-", and
+        # swap CODE_SIGN_ENTITLEMENTS to Loadout+CloudKit.entitlements.
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_ENTITLEMENTS: Loadout.entitlements
+        # Real signing swaps the line above for:
+        # CODE_SIGN_ENTITLEMENTS: Loadout+CloudKit.entitlements
+        # DEVELOPMENT_TEAM: <TEAMID>
+    info:
+      path: Info-generated.plist
+      properties:
+        CFBundleDisplayName: Loadout
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        LSApplicationCategoryType: public.app-category.developer-tools
+        LSMinimumSystemVersion: "15.0"
+        NSHumanReadableCopyright: "Copyright © 2026 Cardinal Blue. All rights reserved."
+        NSPrincipalClass: NSApplication
+
+schemes:
+  # Explicit SHARED scheme for the app target. Without it, Xcode auto-generates
+  # a scheme named "Loadout" for BOTH the app target and the SwiftPM package's
+  # "Loadout" executable product; the two collide and `-scheme Loadout` resolves
+  # nondeterministically (sometimes building the bare CLI binary instead of the
+  # .app). A shared scheme with this name claims it and makes builds repeatable.
+  Loadout:
+    build:
+      targets:
+        Loadout: all
+    run:
+      config: Debug
+    archive:
+      config: Release

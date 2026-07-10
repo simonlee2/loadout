@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Loadout
+@testable import LoadoutKit
 
 /// Tests for `SkillLibrary.adopt(_:syncTo:journal:)` — adopting an existing
 /// unmanaged user skill into the library. All filesystem work happens inside

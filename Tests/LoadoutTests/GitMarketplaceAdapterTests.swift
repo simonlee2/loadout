@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Loadout
+@testable import LoadoutKit
 
 /// Offline tests for ``GitMarketplaceAdapter``. Fixture repositories are built
 /// with real `git init` in temp directories (git is available; no network).

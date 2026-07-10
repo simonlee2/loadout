@@ -4,18 +4,27 @@ import PackageDescription
 let package = Package(
     name: "Loadout",
     platforms: [.macOS(.v15)],
+    products: [
+        .library(name: "LoadoutKit", targets: ["LoadoutKit"]),
+        .executable(name: "Loadout", targets: ["Loadout"]),
+    ],
     dependencies: [
         .package(url: "https://github.com/jpsim/Yams.git", from: "5.1.0"),
     ],
     targets: [
-        .executableTarget(
-            name: "Loadout",
+        .target(
+            name: "LoadoutKit",
             dependencies: ["Yams"],
             path: "Sources/Loadout"
         ),
+        .executableTarget(
+            name: "Loadout",
+            dependencies: ["LoadoutKit"],
+            path: "Sources/LoadoutMain"
+        ),
         .testTarget(
             name: "LoadoutTests",
-            dependencies: ["Loadout"],
+            dependencies: ["LoadoutKit"],
             path: "Tests/LoadoutTests"
         ),
     ]

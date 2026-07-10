@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Loadout
+@testable import LoadoutKit
 
 /// Symlinked skill directories are the D2 deployment mechanism — the
 /// scanner must treat them exactly like real directories.

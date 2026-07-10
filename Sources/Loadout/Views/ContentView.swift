@@ -249,6 +249,8 @@ struct ContentView: View {
             // Kick off a non-blocking update check now that the first scan has
             // populated the inventory (badges/status fill in as it resolves).
             Task { await registryStore.checkForUpdates() }
+            // Wake the personal collection (checks entitlement + iCloud account).
+            Task { await registryStore.activateCollection() }
             // Snapshot harness: pre-select the first registry so the capture
             // shows the browser instead of the matrix.
             if ProcessInfo.processInfo.environment["LOADOUT_SNAPSHOT_REGISTRY"] != nil,

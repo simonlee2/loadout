@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Loadout
+@testable import LoadoutKit
 
 /// Offline tests for ``WellKnownAdapter``. Every network call is served through
 /// the injected transport — no live network.

@@ -46,6 +46,7 @@ private struct SkillDetailView: View {
     @State private var selectedAgent: AgentID?
     @State private var document: DocumentState = .loading
     @State private var confirmingUninstall = false
+    @State private var publishing = false
     @State private var adopting = false
     @State private var reviewingUpdate = false
 
@@ -157,6 +158,24 @@ private struct SkillDetailView: View {
                     confirmingUninstall = true
                 }
                 .disabled(store.isScanning)
+            }
+
+            if registryStore.collectionAvailable {
+                Button {
+                    publishing = true
+                    Task {
+                        await registryStore.publishToCollection(installation)
+                        publishing = false
+                    }
+                } label: {
+                    if publishing {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label("Add to My Collection", systemImage: "icloud.and.arrow.up")
+                    }
+                }
+                .disabled(publishing)
+                .help("Publish this skill's files to your iCloud collection")
             }
 
             Spacer()

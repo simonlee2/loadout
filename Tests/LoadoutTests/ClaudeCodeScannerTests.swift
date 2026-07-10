@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Loadout
+@testable import LoadoutKit
 
 @Suite struct ClaudeCodeScannerTests {
     @Test func findsUserSkillsWithSlugsAndOrigin() throws {

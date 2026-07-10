@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Loadout
+@testable import LoadoutKit
 
 /// Offline tests for ``ClawHubAdapter``. Every network call is served from
 /// captured real responses through the injected transport — no live network.

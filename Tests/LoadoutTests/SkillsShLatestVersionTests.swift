@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Loadout
+@testable import LoadoutKit
 
 /// Offline tests for `SkillsShAdapter.latestVersion(for:)`. Every network
 /// call is served by an injected transport — no live network.

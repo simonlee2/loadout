@@ -1,15 +1,14 @@
 import SwiftUI
 import AppKit
 
-@main
-struct LoadoutApp: App {
+public struct LoadoutApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     @State private var store: InventoryStore
     @State private var registryStore: RegistryStore
     @State private var watcher: DirectoryWatcher?
 
-    init() {
+    public init() {
         // One journal shared by config writes and registry installs, so the
         // History window sees everything.
         let journal = ChangeJournal()
@@ -17,7 +16,7 @@ struct LoadoutApp: App {
         _registryStore = State(initialValue: LoadoutApp.makeRegistryStore(journal: journal))
     }
 
-    var body: some Scene {
+    public var body: some Scene {
         WindowGroup("Loadout") {
             ContentView(store: store, registryStore: registryStore)
                 .task { startWatching() }
@@ -78,8 +77,10 @@ struct LoadoutApp: App {
         }
         // WellKnownAdapter (the /.well-known/skills convention) stays unwired
         // until a real site serves an index — add per-site instances here.
-        return RegistryStore(
+        let collection = CloudKitCollection()
+        let store = RegistryStore(
             adapters: [
+                CollectionRegistryAdapter(collection: collection),
                 GitMarketplaceAdapter(
                     remoteURL: URL(string: "https://github.com/cardinalblue/skills.git")!,
                     displayName: "Cardinal Blue"
@@ -90,6 +91,8 @@ struct LoadoutApp: App {
             library: SkillLibrary(),
             journal: journal
         )
+        store.configureCollection(collection)
+        return store
     }
 
     private static func makeScanners() -> [any AgentScanner] {
