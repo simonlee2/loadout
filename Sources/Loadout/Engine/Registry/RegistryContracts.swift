@@ -43,6 +43,15 @@ protocol RegistryAdapter: Sendable {
     /// for the provenance record.
     @discardableResult
     func fetch(_ skill: RegistrySkill, to destination: URL) async throws -> String
+
+    /// The registry's current version for an installed entry, or nil when
+    /// the registry can't answer cheaply. Compared against
+    /// `LockEntry.version` for update badges.
+    func latestVersion(for entry: LockEntry) async throws -> String?
+}
+
+extension RegistryAdapter {
+    func latestVersion(for entry: LockEntry) async throws -> String? { nil }
 }
 
 /// Where an installed library skill is deployed for one agent.
@@ -87,4 +96,24 @@ protocol SkillInstalling {
 
     /// Removes deployments and the library copy (journaled, reversible).
     func remove(slug: String, journal: ChangeJournal) async throws
+
+    /// Adopts an existing unmanaged skill: moves it into the library and
+    /// symlinks it back to its agent plus `syncTo` agents. Registry is
+    /// recorded as "local". This is how pre-existing skills become
+    /// cross-agent synced (D1's adopt-later, D2's sync).
+    func adopt(
+        _ installation: SkillInstallation,
+        syncTo agents: [AgentID],
+        journal: ChangeJournal
+    ) async throws
+}
+
+extension SkillInstalling {
+    func adopt(
+        _ installation: SkillInstallation,
+        syncTo agents: [AgentID],
+        journal: ChangeJournal
+    ) async throws {
+        throw ConfigWriteError(message: "Adopting isn't supported by this library.")
+    }
 }

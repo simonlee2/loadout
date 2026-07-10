@@ -61,6 +61,34 @@ final class RegistryStore {
         await run(adapter, query: trimmed) { try await adapter.search(trimmed) }
     }
 
+    /// slug → newer upstream version, from the last `checkForUpdates`.
+    private(set) var updatesAvailable: [String: String] = [:]
+    private(set) var isCheckingUpdates = false
+
+    /// Compares every lock entry against its registry's current version.
+    func checkForUpdates() async {
+        guard !isCheckingUpdates else { return }
+        isCheckingUpdates = true
+        defer { isCheckingUpdates = false }
+        var updates: [String: String] = [:]
+        for entry in library.lockEntries {
+            guard let adapter = adapter(id: entry.registry) else { continue }
+            if let latest = try? await adapter.latestVersion(for: entry),
+               latest != entry.version {
+                updates[entry.slug] = latest
+            }
+        }
+        updatesAvailable = updates
+    }
+
+    func adopt(_ installation: SkillInstallation, syncTo agents: [AgentID]) async {
+        do {
+            try await library.adopt(installation, syncTo: agents, journal: journal)
+        } catch {
+            lastActionError = "Adopt failed: \(error.localizedDescription)"
+        }
+    }
+
     func install(_ skill: RegistrySkill, to agents: [AgentID]) async {
         guard let adapter = adapter(id: skill.registry) else { return }
         installing.insert(skill.id)
