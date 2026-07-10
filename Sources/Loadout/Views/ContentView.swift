@@ -12,6 +12,10 @@ struct ContentView: View {
     @State private var selectedRegistrySkillID: RegistrySkill.ID?
     @State private var searchText = ""
     @State private var statusCache = RowStatusCache()
+    // Snapshot harness only: the update review sheet is a separate NSWindow that
+    // WindowSnapshot's layer-tree capture can't reach, so LOADOUT_SNAPSHOT_UPDATE
+    // presents the sheet's content as an inline overlay for the capture instead.
+    @State private var snapshotUpdateSlug: String?
     // Snapshot/autodrive harnesses: vibrant sidebar content can't render
     // offscreen, so captures collapse it rather than show a blank column.
     @State private var columnVisibility: NavigationSplitViewVisibility =
@@ -107,6 +111,26 @@ struct ContentView: View {
             }
             .navigationSplitViewColumnWidth(min: 320, ideal: 380, max: 400)
         }
+        .overlay {
+            if let slug = snapshotUpdateSlug {
+                ZStack {
+                    Color.black.opacity(0.35).ignoresSafeArea()
+                    UpdateReviewSheet(
+                        slug: slug,
+                        oldVersion: lockVersions[slug],
+                        registryStore: registryStore,
+                        prestaged: PreviewLibrary.sampleStagedUpdate(
+                            slug: slug,
+                            newVersion: registryStore.updatesAvailable[slug] ?? "2.1.0"
+                        )
+                    )
+                    .frame(width: 620, height: 520)
+                    .background(Color(nsColor: .windowBackgroundColor))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .shadow(radius: 24)
+                }
+            }
+        }
         .onChange(of: sidebarSelection) { selectedRegistrySkillID = nil }
         .searchable(
             text: $searchText,
@@ -191,6 +215,14 @@ struct ContentView: View {
             // Snapshot harness: select a row so the detail pane has content.
             if ProcessInfo.processInfo.environment["LOADOUT_SNAPSHOT"] != nil {
                 selectedRowID = (visibleRows.first { $0.summary != nil } ?? visibleRows.first)?.id
+            }
+            // Snapshot harness: stage + present the update review sheet for a
+            // specific slug (as an inline overlay, see `snapshotUpdateSlug`).
+            if let slug = ProcessInfo.processInfo.environment["LOADOUT_SNAPSHOT_UPDATE"] {
+                await registryStore.checkForUpdates()
+                sidebarSelection = .allSkills
+                selectedRowID = store.rows.first { $0.slug == slug }?.id
+                snapshotUpdateSlug = slug
             }
             // Autodrive harness: run the scripted end-to-end scenario.
             if let outDir = ProcessInfo.processInfo.environment["LOADOUT_AUTODRIVE"] {

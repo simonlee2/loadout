@@ -400,6 +400,225 @@ final class SkillLibrary: SkillInstalling {
         try persist()
     }
 
+    // MARK: - Update
+
+    /// Downloads the upstream version of a managed skill into a fresh staging
+    /// temp dir and computes the per-file changes vs. the current library copy.
+    /// Mutates nothing (no library writes, no lockfile write, no journal
+    /// entries); the caller either `applyUpdate`s the returned staging tree or
+    /// `discardUpdate`s it.
+    func stageUpdate(
+        slug: String,
+        using adapter: any RegistryAdapter
+    ) async throws -> StagedUpdate {
+        guard let entry = lockEntries.first(where: { $0.slug == slug }) else {
+            throw SkillLibraryError.notInstalled(slug: slug)
+        }
+
+        // Reconstruct just enough of a RegistrySkill for `fetch`: the adapter
+        // derives the repo from `identifier` and the skill dir from `slug`
+        // (see SkillsShAdapter.repoSource / fetch). Other fields are unused
+        // by fetch and left nil.
+        let skill = RegistrySkill(
+            registry: entry.registry,
+            identifier: entry.identifier,
+            slug: entry.slug,
+            name: entry.slug,
+            summary: nil,
+            version: nil,
+            installCount: nil,
+            sourceURL: nil,
+            audit: nil
+        )
+
+        // Fetch into a fresh staging dir and validate before diffing.
+        let stagingDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("loadout-update-\(UUID().uuidString)", isDirectory: true)
+        let newVersion: String
+        do {
+            try FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+            newVersion = try await adapter.fetch(skill, to: stagingDir)
+            let skillFile = stagingDir.appendingPathComponent("SKILL.md", isDirectory: false)
+            guard FileManager.default.fileExists(atPath: skillFile.path) else {
+                throw SkillLibraryError.invalidSkill(slug: slug, reason: "no SKILL.md")
+            }
+            let metadata = Frontmatter.parse(contentsOf: skillFile)
+            guard metadata.name != nil, metadata.description != nil else {
+                throw SkillLibraryError.invalidSkill(
+                    slug: slug, reason: "SKILL.md is missing name or description"
+                )
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: stagingDir)
+            throw error
+        }
+
+        // Diff the staged tree against the current library copy.
+        let libraryDir = directory.appendingPathComponent(slug, isDirectory: true)
+        let changes: [FileChange]
+        do {
+            changes = try Self.computeChanges(old: libraryDir, new: stagingDir)
+        } catch {
+            try? FileManager.default.removeItem(at: stagingDir)
+            throw error
+        }
+
+        return StagedUpdate(
+            slug: slug,
+            newVersion: newVersion,
+            stagingDirectory: stagingDir,
+            changes: changes
+        )
+    }
+
+    /// Applies a staged update: the current library copy is shelved (reversible)
+    /// and the staged tree is moved into its place, then the lock entry's
+    /// version/hash/fetchedAt are refreshed. Deployment symlinks point at the
+    /// (unchanged) library path, so they keep resolving to the new content
+    /// automatically.
+    ///
+    /// Undo design — the journal-ordering that makes a straight revert work:
+    /// `ChangeJournal.revert` of a `directoryMove` does `moveItem(shelf → path)`,
+    /// which THROWS if `path` is occupied. After an applied update the new copy
+    /// sits at that path, so shelving the old copy alone would be
+    /// un-revertible. We therefore record TWO entries, ordered so a
+    /// newest-first revert unwinds cleanly:
+    ///   1. `directoryMove` of the OLD copy (appended first / older) — its
+    ///      revert restores the old copy, but only once the path is free.
+    ///   2. `pathAdd` for the NEW copy at the same path (appended last / newest)
+    ///      — its revert deletes the new copy, freeing the path.
+    /// Reverting newest-first (pathAdd, then directoryMove) thus deletes the new
+    /// copy and restores the old one, byte-for-byte. Same-agent attribution and
+    /// the exact sequence are covered by the undo test.
+    func applyUpdate(_ staged: StagedUpdate, journal: ChangeJournal) async throws {
+        let slug = staged.slug
+        guard let index = lockEntries.firstIndex(where: { $0.slug == slug }) else {
+            throw SkillLibraryError.notInstalled(slug: slug)
+        }
+        guard pathExists(staged.stagingDirectory) else {
+            throw SkillLibraryError.invalidSkill(
+                slug: slug, reason: "staged update directory \(staged.stagingDirectory.path) is missing"
+            )
+        }
+
+        let entry = lockEntries[index]
+        let attributionAgent = entry.deployments.first?.agent ?? .claudeCode
+        let libraryDir = directory.appendingPathComponent(slug, isDirectory: true)
+
+        let entriesSnapshot = lockEntries
+        var createdChanges: [ConfigChange] = []
+        do {
+            // 1. Shelve the current copy first (older journal entry). This IS
+            //    the move; the old copy now lives on the shelf.
+            if pathExists(libraryDir) {
+                let moveChange = try journal.recordDirectoryMove(
+                    agent: attributionAgent,
+                    summary: "Update \(slug) to \(staged.newVersion) (previous copy shelved)",
+                    directory: libraryDir
+                )
+                createdChanges.append(moveChange)
+            }
+
+            // 2. Record a pathAdd for the new copy BEFORE moving it in (newest
+            //    journal entry) so a newest-first revert deletes it, freeing
+            //    the path for the directoryMove revert.
+            let addChange = try journal.recordPathAdd(
+                agent: attributionAgent,
+                summary: "Install updated \(slug) copy (\(staged.newVersion))",
+                path: libraryDir
+            )
+            createdChanges.append(addChange)
+
+            // 3. Move the staged tree into the canonical location.
+            try FileManager.default.moveItem(at: staged.stagingDirectory, to: libraryDir)
+
+            // 4. Recompute the hash and refresh the lock entry.
+            let contentHash = try TreeHash.hash(directory: libraryDir)
+            lockEntries[index] = LockEntry(
+                slug: entry.slug,
+                registry: entry.registry,
+                identifier: entry.identifier,
+                version: staged.newVersion,
+                contentHash: contentHash,
+                fetchedAt: Date(),
+                deployments: entry.deployments
+            )
+            try persist()
+        } catch {
+            // Best-effort rollback: newest-first revert deletes any new copy,
+            // then restores the shelved old copy.
+            for change in createdChanges.reversed() {
+                try? journal.revert(change)
+            }
+            lockEntries = entriesSnapshot
+            throw error
+        }
+    }
+
+    /// Per-file changes between the current library copy (`old`) and a staged
+    /// tree (`new`): walks both as sorted relative paths, classifies each as
+    /// added/removed/modified (byte comparison), and attaches a `FileDiff`
+    /// preview for text files.
+    private static func computeChanges(old: URL, new: URL) throws -> [FileChange] {
+        let oldFiles = try relativeFiles(under: old)
+        let newFiles = try relativeFiles(under: new)
+        let allPaths = Set(oldFiles.keys).union(newFiles.keys).sorted()
+
+        var changes: [FileChange] = []
+        for path in allPaths {
+            switch (oldFiles[path], newFiles[path]) {
+            case let (nil, newURL?):
+                let data = (try? Data(contentsOf: newURL)) ?? Data()
+                changes.append(FileChange(
+                    relativePath: path, kind: .added,
+                    diff: FileDiff.preview(old: Data(), new: data)
+                ))
+            case let (oldURL?, nil):
+                let data = (try? Data(contentsOf: oldURL)) ?? Data()
+                changes.append(FileChange(
+                    relativePath: path, kind: .removed,
+                    diff: FileDiff.preview(old: data, new: Data())
+                ))
+            case let (oldURL?, newURL?):
+                let oldData = (try? Data(contentsOf: oldURL)) ?? Data()
+                let newData = (try? Data(contentsOf: newURL)) ?? Data()
+                if oldData != newData {
+                    changes.append(FileChange(
+                        relativePath: path, kind: .modified,
+                        diff: FileDiff.preview(old: oldData, new: newData)
+                    ))
+                }
+            case (nil, nil):
+                break
+            }
+        }
+        return changes
+    }
+
+    /// Maps every regular file under `root` to its root-relative path. Returns
+    /// an empty map when `root` does not exist. Symlinks are ignored (fetched
+    /// skill trees contain only regular files).
+    private static func relativeFiles(under root: URL) throws -> [String: URL] {
+        let fileManager = FileManager.default
+        var result: [String: URL] = [:]
+        guard fileManager.fileExists(atPath: root.path) else { return result }
+        let rootPath = root.standardizedFileURL.path
+        let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+        guard let walker = fileManager.enumerator(
+            at: root, includingPropertiesForKeys: [.isRegularFileKey]
+        ) else { return result }
+
+        for case let url as URL in walker {
+            guard (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true
+            else { continue }
+            let full = url.standardizedFileURL.path
+            if full.hasPrefix(prefix) {
+                result[String(full.dropFirst(prefix.count))] = url
+            }
+        }
+        return result
+    }
+
     // MARK: - Persistence
 
     private func persist() throws {

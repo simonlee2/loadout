@@ -47,6 +47,17 @@ private struct SkillDetailView: View {
     @State private var document: DocumentState = .loading
     @State private var confirmingUninstall = false
     @State private var adopting = false
+    @State private var reviewingUpdate = false
+
+    /// Newer upstream version for this row, when `checkForUpdates` found one.
+    private var availableUpdate: String? {
+        registryStore.updatesAvailable[row.slug]
+    }
+
+    /// The currently-managed version, for the review sheet's "old → new" header.
+    private var managedVersion: String? {
+        registryStore.lockEntries.first { $0.slug == row.slug }?.version
+    }
 
     /// Agents that don't yet have this skill — candidates for "sync to".
     private var otherAgents: [AgentID] {
@@ -124,6 +135,16 @@ private struct SkillDetailView: View {
         HStack(spacing: 12) {
             SkillEnableToggle(installation: installation, store: store, showsLabel: true)
 
+            if let update = availableUpdate {
+                Button {
+                    reviewingUpdate = true
+                } label: {
+                    Label("Review Update \(RowStatus.shortVersion(update))", systemImage: "arrow.down.circle")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.accentColor)
+            }
+
             if canAdopt {
                 Button("Adopt & Sync…") {
                     adopting = true
@@ -145,6 +166,13 @@ private struct SkillDetailView: View {
             AdoptSheet(
                 installation: installation,
                 otherAgents: otherAgents,
+                registryStore: registryStore
+            )
+        }
+        .sheet(isPresented: $reviewingUpdate) {
+            UpdateReviewSheet(
+                slug: row.slug,
+                oldVersion: managedVersion,
                 registryStore: registryStore
             )
         }

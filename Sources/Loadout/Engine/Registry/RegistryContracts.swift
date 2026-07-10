@@ -106,6 +106,22 @@ protocol SkillInstalling {
         syncTo agents: [AgentID],
         journal: ChangeJournal
     ) async throws
+
+    /// Downloads the upstream version into a staging dir and computes the
+    /// per-file changes vs. the library copy. Applies nothing.
+    /// (Must be a protocol requirement, not just an extension method —
+    /// callers hold `any SkillInstalling` and need dynamic dispatch.)
+    func stageUpdate(
+        slug: String,
+        using adapter: any RegistryAdapter
+    ) async throws -> StagedUpdate
+
+    /// Applies a staged update: shelves the current library copy (journaled,
+    /// reversible), moves the staged tree in, refreshes the lock entry.
+    func applyUpdate(_ staged: StagedUpdate, journal: ChangeJournal) async throws
+
+    /// Discards a staged update's temp directory.
+    func discardUpdate(_ staged: StagedUpdate)
 }
 
 extension SkillInstalling {

@@ -306,6 +306,86 @@ final class PreviewLibrary: SkillInstalling {
         lockEntries.removeAll { $0.slug == slug }
     }
 
+    /// Fabricates a realistic staged update (three file changes incl. a
+    /// multi-line diff) so sample mode can demo the whole review sheet. The
+    /// staging directory is a temp URL that is never actually created on disk.
+    func stageUpdate(
+        slug: String,
+        using adapter: any RegistryAdapter
+    ) async throws -> StagedUpdate {
+        try await Task.sleep(for: .milliseconds(600))
+        let entry = lockEntries.first { $0.slug == slug } ?? LockEntry(
+            slug: slug, registry: "skills.sh", identifier: slug, version: "0",
+            contentHash: "preview", fetchedAt: Date(), deployments: []
+        )
+        let latest = (try? await adapter.latestVersion(for: entry)).flatMap { $0 } ?? entry.version
+        return Self.sampleStagedUpdate(slug: slug, newVersion: latest)
+    }
+
+    /// A realistic three-file staged update used by `stageUpdate` and, for the
+    /// offscreen snapshot harness, directly by the review overlay. The staging
+    /// directory is a temp URL that is never created on disk.
+    static func sampleStagedUpdate(slug: String, newVersion: String) -> StagedUpdate {
+        let changes: [FileChange] = [
+            FileChange(
+                relativePath: "SKILL.md",
+                kind: .modified,
+                diff: [
+                    "  # Code Review",
+                    "  ",
+                    "- Review the current diff for correctness bugs.",
+                    "+ Review the current diff for correctness bugs and",
+                    "+ reuse/simplification/efficiency cleanups.",
+                    "  ",
+                    "  ## Usage",
+                    "- Run `/code-review` on your working tree.",
+                    "+ Run `/code-review` on your working tree, or pass",
+                    "+ `--fix` to apply findings automatically.",
+                ]
+            ),
+            FileChange(
+                relativePath: "references/checklist.md",
+                kind: .added,
+                diff: [
+                    "+ # Review checklist",
+                    "+ ",
+                    "+ - Correctness and edge cases",
+                    "+ - Reuse and simplification",
+                    "+ - Efficiency",
+                ]
+            ),
+            FileChange(
+                relativePath: "assets/diagram.png",
+                kind: .removed,
+                diff: []
+            ),
+        ]
+        return StagedUpdate(
+            slug: slug,
+            newVersion: newVersion,
+            stagingDirectory: FileManager.default.temporaryDirectory
+                .appendingPathComponent("loadout-preview-\(slug)-\(UUID().uuidString)"),
+            changes: changes
+        )
+    }
+
+    /// Applies the update in memory only: bumps the lock entry's version and
+    /// content hash, touching nothing on disk.
+    func applyUpdate(_ staged: StagedUpdate, journal: ChangeJournal) async throws {
+        try await Task.sleep(for: .milliseconds(400))
+        guard let index = lockEntries.firstIndex(where: { $0.slug == staged.slug }) else { return }
+        let old = lockEntries[index]
+        lockEntries[index] = LockEntry(
+            slug: old.slug,
+            registry: old.registry,
+            identifier: old.identifier,
+            version: staged.newVersion,
+            contentHash: "preview-updated",
+            fetchedAt: Date(),
+            deployments: old.deployments
+        )
+    }
+
     func adopt(
         _ installation: SkillInstallation,
         syncTo agents: [AgentID],
