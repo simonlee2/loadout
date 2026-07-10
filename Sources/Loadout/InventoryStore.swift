@@ -78,15 +78,84 @@ final class InventoryStore {
     // MARK: - Project scope
 
     private var projectOverrides: (any ProjectOverriding)?
+    private(set) var projectPreferences: ProjectPreferences?
+    /// Projects currently visible in the UI (hidden ones included only when
+    /// `showHidden` is on).
     private(set) var projects: [ProjectRef] = []
+    /// The full combined list with per-item flags, for the sidebar.
+    private(set) var projectItems: [ProjectItem] = []
 
-    func configureProjects(_ overriding: any ProjectOverriding) {
+    struct ProjectItem: Identifiable, Hashable, Sendable {
+        let ref: ProjectRef
+        let isHidden: Bool
+        let isManual: Bool
+        var id: String { ref.id }
+    }
+
+    func configureProjects(
+        _ overriding: any ProjectOverriding,
+        preferences: ProjectPreferences
+    ) {
         projectOverrides = overriding
+        projectPreferences = preferences
         refreshProjects()
     }
 
     func refreshProjects() {
-        projects = (try? projectOverrides?.projects()) ?? []
+        let auto = (try? projectOverrides?.projects()) ?? []
+        let autoPaths = Set(auto.map(\.path))
+        let manual = (projectPreferences?.added ?? [])
+            .filter { !autoPaths.contains($0) }
+            .filter { path in
+                var isDir: ObjCBool = false
+                return FileManager.default.fileExists(atPath: path, isDirectory: &isDir)
+                    && isDir.boolValue
+            }
+            .map { ProjectRef(path: $0) }
+        let hidden = projectPreferences?.hidden ?? []
+
+        projectItems = (auto.map { ($0, false) } + manual.map { ($0, true) })
+            .map { ref, isManual in
+                ProjectItem(ref: ref, isHidden: hidden.contains(ref.path), isManual: isManual)
+            }
+            .sorted { $0.ref.name.localizedCaseInsensitiveCompare($1.ref.name) == .orderedAscending }
+
+        let showHidden = projectPreferences?.showHidden ?? false
+        projects = projectItems
+            .filter { showHidden || !$0.isHidden }
+            .map(\.ref)
+    }
+
+    func hideProject(_ path: String) {
+        projectPreferences?.hide(path)
+        refreshProjects()
+    }
+
+    func unhideProject(_ path: String) {
+        projectPreferences?.unhide(path)
+        refreshProjects()
+    }
+
+    func addManualProject(_ url: URL) {
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir),
+              isDir.boolValue
+        else {
+            lastActionError = "\(url.lastPathComponent) isn't a folder."
+            return
+        }
+        projectPreferences?.add(url.path)
+        refreshProjects()
+    }
+
+    func removeManualProject(_ path: String) {
+        projectPreferences?.removeAdded(path)
+        refreshProjects()
+    }
+
+    func setShowHiddenProjects(_ show: Bool) {
+        projectPreferences?.showHidden = show
+        refreshProjects()
     }
 
     func projectSkillStates(in project: ProjectRef) -> [ProjectSkillState] {

@@ -45,7 +45,7 @@ struct LoadoutApp: App {
                 writers: [ClaudeCodeConfigWriter(), CodexConfigWriter()],
                 journal: journal
             )
-            store.configureProjects(ClaudeProjectOverrides())
+            store.configureProjects(ClaudeProjectOverrides(), preferences: ProjectPreferences())
         } else {
             // No writers (toggles stay disabled) but a throwaway journal so
             // the in-memory preview project toggles can run.
@@ -56,7 +56,13 @@ struct LoadoutApp: App {
                         .appendingPathComponent("loadout-sample-journal", isDirectory: true)
                 )
             )
-            store.configureProjects(PreviewProjectOverrides())
+            store.configureProjects(
+                PreviewProjectOverrides(),
+                preferences: ProjectPreferences(
+                    file: FileManager.default.temporaryDirectory
+                        .appendingPathComponent("loadout-sample-projects.json")
+                )
+            )
         }
         return store
     }
