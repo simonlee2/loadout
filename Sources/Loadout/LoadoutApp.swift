@@ -2,6 +2,18 @@ import SwiftUI
 import AppKit
 
 public struct LoadoutApp: App {
+    /// Least-invasive extension point for the signed app shell.
+    ///
+    /// The `App/LoadoutAppShell` target owns the Sparkle dependency (LoadoutKit
+    /// must stay Sparkle-free so `swift test` / `swift run` never resolve it).
+    /// Before calling `LoadoutApp.main()`, the shell sets this closure to inject
+    /// its own menu commands — currently Sparkle's "Check for Updates…" item —
+    /// which `body` places in a `CommandGroup(after: .appInfo)`. It returns an
+    /// `AnyView` rather than `Commands` so this hook stays free of any Sparkle
+    /// or command-builder detail. When `nil` (plain `swift run Loadout`), no
+    /// extra menu item appears.
+    public static var appInfoCommands: (() -> AnyView)?
+
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     @State private var store: InventoryStore
@@ -24,6 +36,11 @@ public struct LoadoutApp: App {
         .defaultSize(width: 1100, height: 700)
         .windowToolbarStyle(.unified)
         .commands {
+            CommandGroup(after: .appInfo) {
+                if let appInfoCommands = LoadoutApp.appInfoCommands {
+                    appInfoCommands()
+                }
+            }
             CommandGroup(after: .sidebar) {
                 HistoryCommand()
             }
