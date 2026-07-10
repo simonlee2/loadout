@@ -51,9 +51,11 @@ extension AgentID {
     }
 }
 
-/// What the sidebar has selected. Drives the matrix filter.
+/// What the sidebar has selected. Drives the matrix filter, or — for
+/// `.registry` — swaps the content column over to the registry browser.
 enum SidebarSelection: Hashable {
     case allSkills
     case origin(OriginKind)
     case agent(AgentID)
+    case registry(id: String)
 }

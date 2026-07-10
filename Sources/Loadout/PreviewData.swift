@@ -171,3 +171,105 @@ struct SampleScanner: AgentScanner {
         ),
     ]
 }
+
+// MARK: - Registry previews
+
+/// Stand-in `RegistryAdapter` so the registry browser runs before the real
+/// network-backed `SkillsShAdapter` lands. `featured()` returns a small curated
+/// list; `search` filters it; `fetch` refuses (the browser never calls it —
+/// installs go through `PreviewLibrary`).
+struct PreviewRegistryAdapter: RegistryAdapter {
+    let id = "skills.sh"
+    let displayName = "skills.sh"
+
+    private static let catalog: [RegistrySkill] = [
+        RegistrySkill(
+            registry: "skills.sh",
+            identifier: "anthropics/skills/deep-research",
+            slug: "deep-research",
+            name: "Deep Research",
+            summary: "Fan-out web searches, verify claims, synthesize a cited report.",
+            version: "3.1.0",
+            installCount: 12_400,
+            sourceURL: URL(string: "https://skills.sh/anthropics/skills/deep-research"),
+            audit: .passed
+        ),
+        RegistrySkill(
+            registry: "skills.sh",
+            identifier: "cardinalblue/skills/code-review",
+            slug: "code-review",
+            name: "Code Review",
+            summary: "Review the current diff for correctness bugs and cleanups.",
+            version: "2.0.1",
+            installCount: 8_930,
+            sourceURL: URL(string: "https://skills.sh/cardinalblue/skills/code-review"),
+            audit: .passed
+        ),
+        RegistrySkill(
+            registry: "skills.sh",
+            identifier: "community/skills/markdown-lint",
+            slug: "markdown-lint",
+            name: "Markdown Lint",
+            summary: "Lint and normalize Markdown documents.",
+            version: "1.0.0",
+            installCount: 640,
+            sourceURL: URL(string: "https://skills.sh/community/skills/markdown-lint"),
+            audit: .flagged
+        ),
+    ]
+
+    func featured() async throws -> [RegistrySkill] {
+        Self.catalog
+    }
+
+    func search(_ query: String) async throws -> [RegistrySkill] {
+        let needle = query.lowercased()
+        return Self.catalog.filter { skill in
+            skill.name.lowercased().contains(needle)
+                || skill.slug.lowercased().contains(needle)
+                || (skill.summary?.lowercased().contains(needle) ?? false)
+        }
+    }
+
+    @discardableResult
+    func fetch(_ skill: RegistrySkill, to destination: URL) async throws -> String {
+        throw PreviewError.notImplemented
+    }
+
+    enum PreviewError: LocalizedError {
+        case notImplemented
+        var errorDescription: String? { "preview" }
+    }
+}
+
+/// In-memory `SkillInstalling`: records installs as `LockEntry` values after a
+/// 1s delay so the install spinner is visible. Never touches disk.
+@MainActor
+final class PreviewLibrary: SkillInstalling {
+    private(set) var lockEntries: [LockEntry] = []
+
+    func install(
+        _ skill: RegistrySkill,
+        using adapter: any RegistryAdapter,
+        to agents: [AgentID],
+        journal: ChangeJournal
+    ) async throws {
+        try await Task.sleep(for: .seconds(1))
+        let entry = LockEntry(
+            slug: skill.slug,
+            registry: skill.registry,
+            identifier: skill.identifier,
+            version: skill.version ?? "preview",
+            contentHash: "preview",
+            fetchedAt: Date(),
+            deployments: agents.map { agent in
+                Deployment(agent: agent, path: "/preview/\(agent.rawValue)/\(skill.slug)", kind: .symlink)
+            }
+        )
+        lockEntries.append(entry)
+    }
+
+    func remove(slug: String, journal: ChangeJournal) async throws {
+        lockEntries.removeAll { $0.slug == slug }
+    }
+}

@@ -4,10 +4,12 @@ import AppKit
 /// Root three-column layout: sidebar filter, inventory matrix, and detail.
 struct ContentView: View {
     let store: InventoryStore
+    let registryStore: RegistryStore
 
     @Environment(\.openWindow) private var openWindow
     @State private var sidebarSelection: SidebarSelection = .allSkills
     @State private var selectedRowID: SkillRow.ID?
+    @State private var selectedRegistrySkillID: RegistrySkill.ID?
     @State private var searchText = ""
     // Snapshot/autodrive harnesses: vibrant sidebar content can't render
     // offscreen, so captures collapse it rather than show a blank column.
@@ -26,28 +28,64 @@ struct ContentView: View {
         return store.rows.first { $0.id == selectedRowID }
     }
 
+    /// The registry id when the sidebar has a registry selected, else nil.
+    private var selectedRegistryID: String? {
+        if case .registry(let id) = sidebarSelection { return id }
+        return nil
+    }
+
+    private func selectedRegistrySkill(in registryID: String) -> RegistrySkill? {
+        guard let selectedRegistrySkillID else { return nil }
+        return registryStore.browse[registryID]?.skills.first { $0.id == selectedRegistrySkillID }
+    }
+
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            SidebarView(store: store, selection: $sidebarSelection)
+            SidebarView(store: store, registryStore: registryStore, selection: $sidebarSelection)
                 .navigationSplitViewColumnWidth(min: 200, ideal: 240)
         } content: {
-            VStack(spacing: 0) {
-                MatrixView(
-                    rows: visibleRows,
-                    agents: store.activeAgents,
-                    store: store,
-                    selection: $selectedRowID
-                )
-                Divider()
-                StatusBarView(store: store)
+            Group {
+                if let registryID = selectedRegistryID {
+                    RegistryBrowserView(
+                        registryID: registryID,
+                        store: registryStore,
+                        searchText: searchText,
+                        selection: $selectedRegistrySkillID
+                    )
+                } else {
+                    VStack(spacing: 0) {
+                        MatrixView(
+                            rows: visibleRows,
+                            agents: store.activeAgents,
+                            store: store,
+                            selection: $selectedRowID
+                        )
+                        Divider()
+                        StatusBarView(store: store)
+                    }
+                }
             }
             .navigationSplitViewColumnWidth(min: 420, ideal: 620)
             .navigationTitle("Loadout")
         } detail: {
-            DetailView(row: selectedRow, store: store)
-                .navigationSplitViewColumnWidth(min: 320, ideal: 380)
+            Group {
+                if let registryID = selectedRegistryID {
+                    RegistryDetailView(
+                        skill: selectedRegistrySkill(in: registryID),
+                        store: registryStore
+                    )
+                } else {
+                    DetailView(row: selectedRow, store: store)
+                }
+            }
+            .navigationSplitViewColumnWidth(min: 320, ideal: 380)
         }
-        .searchable(text: $searchText, placement: .toolbar, prompt: "Search skills")
+        .onChange(of: sidebarSelection) { selectedRegistrySkillID = nil }
+        .searchable(
+            text: $searchText,
+            placement: .toolbar,
+            prompt: selectedRegistryID == nil ? "Search skills" : "Search registry"
+        )
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -84,8 +122,28 @@ struct ContentView: View {
         } message: { error in
             Text(error)
         }
+        .alert(
+            "Action Failed",
+            isPresented: Binding(
+                get: { registryStore.lastActionError != nil },
+                set: { presenting in if !presenting { registryStore.lastActionError = nil } }
+            ),
+            presenting: registryStore.lastActionError
+        ) { _ in
+            Button("OK", role: .cancel) { registryStore.lastActionError = nil }
+        } message: { error in
+            Text(error)
+        }
         .task {
             await store.rescan()
+            // Snapshot harness: pre-select the first registry so the capture
+            // shows the browser instead of the matrix.
+            if ProcessInfo.processInfo.environment["LOADOUT_SNAPSHOT_REGISTRY"] != nil,
+               let first = registryStore.adapters.first {
+                sidebarSelection = .registry(id: first.id)
+                await registryStore.loadFeatured(registry: first.id)
+                selectedRegistrySkillID = registryStore.browse[first.id]?.skills.first?.id
+            }
             // Snapshot harness: select a row so the detail pane has content.
             if ProcessInfo.processInfo.environment["LOADOUT_SNAPSHOT"] != nil {
                 selectedRowID = (visibleRows.first { $0.summary != nil } ?? visibleRows.first)?.id
@@ -107,6 +165,10 @@ struct ContentView: View {
             return row.installations.contains { $0.origin.kind == kind }
         case .agent(let agent):
             return row.installation(for: agent) != nil
+        case .registry:
+            // Registry selection swaps the content column entirely; the matrix
+            // isn't shown, so nothing needs to match.
+            return false
         }
     }
 

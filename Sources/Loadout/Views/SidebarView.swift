@@ -4,6 +4,7 @@ import SwiftUI
 /// and an Agents section. Selection drives the matrix filter.
 struct SidebarView: View {
     let store: InventoryStore
+    let registryStore: RegistryStore
     @Binding var selection: SidebarSelection
 
     private var rows: [SkillRow] { store.rows }
@@ -51,6 +52,15 @@ struct SidebarView: View {
                             count: agentCount(agent),
                             tag: .agent(agent)
                         )
+                    }
+                }
+            }
+
+            if !registryStore.adapters.isEmpty {
+                Section("Registries") {
+                    ForEach(registryStore.adapters, id: \.id) { adapter in
+                        Label(adapter.displayName, systemImage: "shippingbox")
+                            .tag(SidebarSelection.registry(id: adapter.id))
                     }
                 }
             }

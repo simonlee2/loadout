@@ -5,12 +5,21 @@ import AppKit
 struct LoadoutApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
-    @State private var store = LoadoutApp.makeStore()
+    @State private var store: InventoryStore
+    @State private var registryStore: RegistryStore
     @State private var watcher: DirectoryWatcher?
+
+    init() {
+        // One journal shared by config writes and registry installs, so the
+        // History window sees everything.
+        let journal = ChangeJournal()
+        _store = State(initialValue: LoadoutApp.makeStore(journal: journal))
+        _registryStore = State(initialValue: LoadoutApp.makeRegistryStore(journal: journal))
+    }
 
     var body: some Scene {
         WindowGroup("Loadout") {
-            ContentView(store: store)
+            ContentView(store: store, registryStore: registryStore)
                 .task { startWatching() }
         }
         .defaultSize(width: 1100, height: 700)
@@ -27,17 +36,33 @@ struct LoadoutApp: App {
         .defaultSize(width: 480, height: 560)
     }
 
-    private static func makeStore() -> InventoryStore {
+    private static func makeStore(journal: ChangeJournal) -> InventoryStore {
         let store = InventoryStore(scanners: makeScanners())
         // Sample mode stays read-only: its fixture installations carry fake
         // paths, and real writers would journal them into real configs.
         if ProcessInfo.processInfo.environment["LOADOUT_SAMPLE"] == nil {
             store.configureWriting(
                 writers: [ClaudeCodeConfigWriter(), CodexConfigWriter()],
-                journal: ChangeJournal()
+                journal: journal
             )
         }
         return store
+    }
+
+    private static func makeRegistryStore(journal: ChangeJournal) -> RegistryStore {
+        // Sample mode browses fixtures and installs in-memory only.
+        if ProcessInfo.processInfo.environment["LOADOUT_SAMPLE"] != nil {
+            return RegistryStore(
+                adapters: [PreviewRegistryAdapter()],
+                library: PreviewLibrary(),
+                journal: journal
+            )
+        }
+        return RegistryStore(
+            adapters: [SkillsShAdapter()],
+            library: SkillLibrary(),
+            journal: journal
+        )
     }
 
     private static func makeScanners() -> [any AgentScanner] {
