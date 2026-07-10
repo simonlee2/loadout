@@ -20,12 +20,20 @@ struct DetailView: View {
     }
 }
 
-/// The loaded body of a SKILL.md file, in the best form we could produce.
+/// UI state for the SKILL.md body, adding a `.loading` phase to `SkillDocument`.
 private enum DocumentState {
     case loading
     case missing
     case attributed(AttributedString)
     case plain(String)
+
+    init(_ document: SkillDocument) {
+        switch document {
+        case .missing: self = .missing
+        case .attributed(let value): self = .attributed(value)
+        case .plain(let value): self = .plain(value)
+        }
+    }
 }
 
 private struct SkillDetailView: View {
@@ -186,43 +194,7 @@ private struct SkillDetailView: View {
             return
         }
         document = .loading
-        let url = installation.directory.appendingPathComponent("SKILL.md")
-        let content = await Task.detached(priority: .userInitiated) {
-            try? String(contentsOf: url, encoding: .utf8)
-        }.value
-
-        guard let content else {
-            document = .missing
-            return
-        }
-
-        let body = Self.stripFrontmatter(content)
-        let options = AttributedString.MarkdownParsingOptions(
-            interpretedSyntax: .inlineOnlyPreservingWhitespace
-        )
-        if let attributed = try? AttributedString(markdown: body, options: options) {
-            document = .attributed(attributed)
-        } else {
-            document = .plain(body)
-        }
-    }
-
-    /// Drops a leading `---` YAML frontmatter block if present.
-    private static func stripFrontmatter(_ text: String) -> String {
-        let lines = text.components(separatedBy: "\n")
-        guard lines.first?.trimmingCharacters(in: .whitespaces) == "---" else {
-            return text
-        }
-        var index = 1
-        while index < lines.count {
-            if lines[index].trimmingCharacters(in: .whitespaces) == "---" {
-                return lines[(index + 1)...]
-                    .joined(separator: "\n")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-            index += 1
-        }
-        return text
+        document = DocumentState(await SkillDocumentLoader.load(directory: installation.directory))
     }
 }
 

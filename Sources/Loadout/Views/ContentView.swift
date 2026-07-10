@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Root three-column layout: sidebar filter, inventory matrix, and detail.
 struct ContentView: View {
@@ -7,10 +8,12 @@ struct ContentView: View {
     @State private var sidebarSelection: SidebarSelection = .allSkills
     @State private var selectedRowID: SkillRow.ID?
     @State private var searchText = ""
-    // Snapshot harness: vibrant sidebar content can't render offscreen, so
-    // captures collapse it rather than show a blank column.
+    // Snapshot/autodrive harnesses: vibrant sidebar content can't render
+    // offscreen, so captures collapse it rather than show a blank column.
     @State private var columnVisibility: NavigationSplitViewVisibility =
-        ProcessInfo.processInfo.environment["LOADOUT_SNAPSHOT"] != nil ? .doubleColumn : .all
+        (ProcessInfo.processInfo.environment["LOADOUT_SNAPSHOT"] != nil
+            || ProcessInfo.processInfo.environment["LOADOUT_AUTODRIVE"] != nil)
+            ? .doubleColumn : .all
 
     /// Rows after applying the sidebar filter and the search field.
     private var visibleRows: [SkillRow] {
@@ -65,6 +68,10 @@ struct ContentView: View {
             if ProcessInfo.processInfo.environment["LOADOUT_SNAPSHOT"] != nil {
                 selectedRowID = (visibleRows.first { $0.summary != nil } ?? visibleRows.first)?.id
             }
+            // Autodrive harness: run the scripted end-to-end scenario.
+            if let outDir = ProcessInfo.processInfo.environment["LOADOUT_AUTODRIVE"] {
+                await runAutoDrive(outDir: outDir)
+            }
         }
     }
 
@@ -100,5 +107,104 @@ struct ContentView: View {
             }
             return false
         }
+    }
+
+    // MARK: Autodrive harness
+
+    /// Debug harness: `LOADOUT_AUTODRIVE=/path/outdir swift run Loadout` drives a
+    /// scripted scenario over the real @State the controls bind to (exercising
+    /// the actual filter/selection/render paths), capturing a PNG plus a
+    /// `results.jsonl` line per step, then quits. Only reached when the env var
+    /// is set; it never writes to any agent config or skill directory.
+    @MainActor
+    private func runAutoDrive(outDir: String) async {
+        let base = URL(fileURLWithPath: outDir)
+        try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        let resultsURL = base.appendingPathComponent("results.jsonl")
+        // Start each run with a fresh results file.
+        try? FileManager.default.removeItem(at: resultsURL)
+        FileManager.default.createFile(atPath: resultsURL.path, contents: nil)
+
+        func record(_ step: Int, _ name: String, expected: String, actual: String, pass: Bool) {
+            let line = "{\"step\": \(step), \"name\": \"\(name)\", \"expected\": \(expected), \"actual\": \(actual), \"pass\": \(pass)}\n"
+            guard let data = line.data(using: .utf8),
+                  let handle = try? FileHandle(forWritingTo: resultsURL) else { return }
+            handle.seekToEndOfFile()
+            handle.write(data)
+            try? handle.close()
+        }
+        func snapshot(_ file: String) {
+            WindowSnapshot.capture(to: base.appendingPathComponent(file).path)
+        }
+        // Let SwiftUI apply state mutations and re-render before we read/capture.
+        func settle() async { try? await Task.sleep(for: .milliseconds(800)) }
+
+        // Step 1: baseline — all skills, no selection.
+        sidebarSelection = .allSkills
+        searchText = ""
+        selectedRowID = nil
+        await settle()
+        let baseline = visibleRows.count
+        record(1, "baseline all skills", expected: "26", actual: "\(baseline)", pass: baseline == 26)
+
+        // Step 2: sidebar filter → agent Claude Code.
+        sidebarSelection = .agent(.claudeCode)
+        await settle()
+        let claudeCount = visibleRows.count
+        snapshot("step2-claudecode.png")
+        record(2, "filter agent claudeCode", expected: "21", actual: "\(claudeCount)", pass: claudeCount == 21)
+
+        // Step 3: sidebar filter → agent Codex.
+        sidebarSelection = .agent(.codex)
+        await settle()
+        let codexCount = visibleRows.count
+        snapshot("step3-codex.png")
+        record(3, "filter agent codex", expected: "5", actual: "\(codexCount)", pass: codexCount == 5)
+
+        // Step 4: sidebar filter → origin System.
+        sidebarSelection = .origin(.system)
+        await settle()
+        let systemCount = visibleRows.count
+        record(4, "filter origin system", expected: "5", actual: "\(systemCount)", pass: systemCount == 5)
+
+        // Step 5: search "ios". Expected (slug-only) is the ios-* skill count.
+        sidebarSelection = .allSkills
+        searchText = "ios"
+        await settle()
+        let iosCount = visibleRows.count
+        snapshot("step5-search-ios.png")
+        record(5, "search ios", expected: "5", actual: "\(iosCount)", pass: iosCount == 5)
+
+        // Step 6: clear search, select swiftui-patterns, verify DetailView loads.
+        searchText = ""
+        await settle()
+        let target = store.rows.first { $0.slug == "swiftui-patterns" }
+        selectedRowID = target?.id
+        await settle()
+        // Verify the SKILL.md read via the exact loader DetailView renders from.
+        var loadStatus = "no-row"
+        if let installation = target?.installations.first {
+            loadStatus = (await SkillDocumentLoader.load(directory: installation.directory)).statusDescription
+        }
+        await settle() // let DetailView finish rendering the loaded document
+        snapshot("step6-detail-swiftui-patterns.png")
+        let detailOK = loadStatus == "attributed"
+        record(6, "select swiftui-patterns detail load", expected: "\"attributed\"", actual: "\"\(loadStatus)\"", pass: detailOK)
+
+        // Step 7: rescan — count stable, no scan errors.
+        await store.rescan()
+        sidebarSelection = .allSkills
+        selectedRowID = nil
+        await settle()
+        let afterRescan = visibleRows.count
+        let noErrors = store.scanErrors.isEmpty
+        record(7, "rescan stable count and no errors", expected: "26", actual: "\(afterRescan)", pass: afterRescan == 26 && noErrors)
+
+        // Step 8: final summary of core invariants.
+        let coreOK = baseline == 26 && afterRescan == 26 && noErrors && detailOK
+        let summary = "\"baseline=\(baseline) claude=\(claudeCount) codex=\(codexCount) system=\(systemCount) ios=\(iosCount) detail=\(loadStatus) afterRescan=\(afterRescan) errors=\(store.scanErrors.count)\""
+        record(8, "final summary", expected: "\"26/21/5/5/attributed/no-errors\"", actual: summary, pass: coreOK)
+
+        NSApp.terminate(nil)
     }
 }
