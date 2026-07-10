@@ -117,3 +117,50 @@ extension SkillInstalling {
         throw ConfigWriteError(message: "Adopting isn't supported by this library.")
     }
 }
+
+/// One file's change in a staged update, for the review UI.
+struct FileChange: Identifiable, Hashable, Sendable {
+    enum Kind: String, Sendable {
+        case added
+        case removed
+        case modified
+    }
+    let relativePath: String
+    let kind: Kind
+    /// Unified-diff-style preview lines ("+ …" / "- …" / "  …"); empty for
+    /// binary or oversized files.
+    let diff: [String]
+
+    var id: String { relativePath }
+}
+
+/// A downloaded-but-not-applied update, held in a temp dir until the user
+/// approves it in the review sheet.
+struct StagedUpdate: Sendable {
+    let slug: String
+    let newVersion: String
+    let stagingDirectory: URL
+    let changes: [FileChange]
+}
+
+extension SkillInstalling {
+    /// Downloads the upstream version into a staging dir and computes the
+    /// per-file changes vs. the library copy. Applies nothing.
+    func stageUpdate(
+        slug: String,
+        using adapter: any RegistryAdapter
+    ) async throws -> StagedUpdate {
+        throw ConfigWriteError(message: "Updates aren't supported by this library.")
+    }
+
+    /// Applies a staged update: shelves the current library copy (journaled,
+    /// reversible), moves the staged tree in, refreshes the lock entry.
+    func applyUpdate(_ staged: StagedUpdate, journal: ChangeJournal) async throws {
+        throw ConfigWriteError(message: "Updates aren't supported by this library.")
+    }
+
+    /// Discards a staged update's temp directory.
+    func discardUpdate(_ staged: StagedUpdate) {
+        try? FileManager.default.removeItem(at: staged.stagingDirectory)
+    }
+}

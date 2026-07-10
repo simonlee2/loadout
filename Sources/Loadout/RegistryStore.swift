@@ -81,6 +81,32 @@ final class RegistryStore {
         updatesAvailable = updates
     }
 
+    /// Downloads an available update for review; nil (with error surfaced)
+    /// on failure.
+    func stageUpdate(slug: String) async -> StagedUpdate? {
+        guard let entry = library.lockEntries.first(where: { $0.slug == slug }),
+              let adapter = adapter(id: entry.registry) else { return nil }
+        do {
+            return try await library.stageUpdate(slug: slug, using: adapter)
+        } catch {
+            lastActionError = "Couldn't stage update: \(error.localizedDescription)"
+            return nil
+        }
+    }
+
+    func applyUpdate(_ staged: StagedUpdate) async {
+        do {
+            try await library.applyUpdate(staged, journal: journal)
+            updatesAvailable.removeValue(forKey: staged.slug)
+        } catch {
+            lastActionError = "Couldn't apply update: \(error.localizedDescription)"
+        }
+    }
+
+    func discardUpdate(_ staged: StagedUpdate) {
+        library.discardUpdate(staged)
+    }
+
     func adopt(_ installation: SkillInstallation, syncTo agents: [AgentID]) async {
         do {
             try await library.adopt(installation, syncTo: agents, journal: journal)
