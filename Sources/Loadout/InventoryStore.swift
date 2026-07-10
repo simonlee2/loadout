@@ -75,6 +75,42 @@ final class InventoryStore {
             .notice("scan complete: \(result.installs.count) installations (\(byAgent)) errors=\(result.errors.count)")
     }
 
+    // MARK: - Project scope
+
+    private var projectOverrides: (any ProjectOverriding)?
+    private(set) var projects: [ProjectRef] = []
+
+    func configureProjects(_ overriding: any ProjectOverriding) {
+        projectOverrides = overriding
+        refreshProjects()
+    }
+
+    func refreshProjects() {
+        projects = (try? projectOverrides?.projects()) ?? []
+    }
+
+    func projectSkillStates(in project: ProjectRef) -> [ProjectSkillState] {
+        do {
+            return try projectOverrides?.skillStates(in: project) ?? []
+        } catch {
+            lastActionError = "Couldn't read project skills: \(error.localizedDescription)"
+            return []
+        }
+    }
+
+    func setSkill(_ slug: String, enabled: Bool, in project: ProjectRef) async {
+        guard let projectOverrides, let journal else {
+            lastActionError = "Project overrides aren't configured."
+            return
+        }
+        do {
+            _ = try projectOverrides.setSkill(slug, enabled: enabled, in: project, journal: journal)
+        } catch {
+            lastActionError = error.localizedDescription
+        }
+        await rescan()
+    }
+
     // MARK: - Write side (M1)
 
     func canToggle(_ installation: SkillInstallation) -> Bool {
