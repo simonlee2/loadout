@@ -33,7 +33,6 @@ struct ProjectView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider()
             if visibleStates.isEmpty {
                 ContentUnavailableView(
                     searchText.isEmpty ? "No Skills" : "No Results",
@@ -44,9 +43,9 @@ struct ProjectView: View {
                             : "No skills match “\(searchText)”."
                     )
                 )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                table
-                    .scrollContentBackground(.hidden)
+                ledger
             }
         }
         .background(Ledger.paper)
@@ -71,46 +70,30 @@ struct ProjectView: View {
         .padding(.vertical, 10)
     }
 
-    // MARK: Table
+    // MARK: Ledger
 
-    private var table: some View {
-        Table(visibleStates, selection: $selection) {
-            TableColumn("Skill") { state in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(state.installation.displayName)
-                        .lineLimit(1)
-                    if let description = state.installation.metadata.description,
-                       !description.isEmpty {
-                        Text(description)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                }
-                .padding(.vertical, 2)
-            }
-            .width(min: 190, ideal: 240)
-
-            TableColumn("Origin") { state in
-                OriginChip(text: originLabel(state.installation.origin))
-            }
-            .width(min: 80, ideal: 100)
-
-            TableColumn("Enabled") { state in
-                ProjectSkillToggle(state: state, project: project, store: store)
-            }
-            .width(min: 56, ideal: 64)
-
-            TableColumn("Note") { state in
-                if let note = Self.sourceNote(for: state) {
-                    Text(note)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+    private var ledger: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(visibleStates) { state in
+                    ProjectLedgerRow(
+                        state: state,
+                        project: project,
+                        store: store,
+                        originText: originLabel(state.installation.origin),
+                        note: Self.sourceNote(for: state),
+                        isSelected: selection == state.id,
+                        onSelect: { selection = state.id }
+                    )
                 }
             }
-            .width(min: 140, ideal: 190)
+            .frame(maxWidth: Ledger.Space.measure)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, Ledger.Space.gutter)
+            .padding(.top, Ledger.Space.top)
+            .padding(.bottom, 12)
         }
+        .background(Ledger.paper)
     }
 
     /// Origin chip text, collapsing a matching project origin to "This project".
@@ -140,6 +123,80 @@ struct ProjectView: View {
     }
 }
 
+// MARK: - Ledger row
+
+/// One project skill styled like the matrix ledger: name + quiet description on
+/// the left, a quiet origin/note cluster, and the teal-tinted enablement switch.
+/// The whole row is a selection target; the toggle stays independently live.
+private struct ProjectLedgerRow: View {
+    let state: ProjectSkillState
+    let project: ProjectRef
+    let store: InventoryStore
+    let originText: String
+    let note: String?
+    let isSelected: Bool
+    let onSelect: () -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 14) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(state.installation.displayName)
+                    .font(.system(size: 14.5, weight: .medium))
+                    .foregroundStyle(isSelected ? Ledger.accentInk : Ledger.ink)
+                    .lineLimit(1)
+                if let description = state.installation.metadata.description,
+                   !description.isEmpty {
+                    Text(description)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Ledger.quiet)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(originText)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Ledger.quieter)
+                    .lineLimit(1)
+                if let note {
+                    Text(note)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(Ledger.quiet)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+            .frame(maxWidth: 190, alignment: .trailing)
+
+            ProjectSkillToggle(state: state, project: project, store: store)
+        }
+        .padding(.vertical, Ledger.Space.rowV)
+        .padding(.horizontal, Ledger.Space.rowH)
+        .background(rowBackground)
+        .overlay(alignment: .bottom) {
+            if !isSelected {
+                Rectangle().fill(Ledger.lineSoft).frame(height: 1)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onSelect)
+    }
+
+    @ViewBuilder
+    private var rowBackground: some View {
+        if isSelected {
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Ledger.surface)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .strokeBorder(Ledger.accent.opacity(0.28), lineWidth: 1)
+                )
+        }
+    }
+}
+
 // MARK: - Toggle
 
 /// A `.switch` toggle bound to one skill's project-effective enablement,
@@ -161,6 +218,7 @@ struct ProjectSkillToggle: View {
             .labelsHidden()
             .toggleStyle(.switch)
             .controlSize(.mini)
+            .tint(Ledger.accent)
             .disabled(store.isScanning)
             .help("Enable or disable \(state.installation.displayName) in \(project.name)")
             .onChange(of: state.isEnabledInProject) { pending = nil }
@@ -213,6 +271,8 @@ struct ProjectDetailColumn: View {
                 systemImage: "sidebar.right",
                 description: Text("Select a skill from the project to see its details.")
             )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Ledger.paper)
         }
     }
 }

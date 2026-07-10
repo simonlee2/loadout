@@ -37,14 +37,6 @@ struct MatrixView: View {
             case .registries: "From registries"
             }
         }
-
-        var aside: String {
-            switch self {
-            case .user: "Yours"
-            case .system: "Built in"
-            case .registries: "Managed"
-            }
-        }
     }
 
     private func bucket(for row: SkillRow) -> Bucket {
@@ -86,7 +78,6 @@ struct MatrixView: View {
                     SectionHeader(
                         title: group.bucket.title,
                         count: group.rows.count,
-                        aside: group.bucket.aside,
                         isFirst: index == 0
                     )
                     ForEach(group.rows) { row in
@@ -113,12 +104,11 @@ struct MatrixView: View {
 
 // MARK: - Section heading
 
-/// Serif section heading with a trailing count and a quiet uppercase aside,
-/// underlined by a hairline — the editorial rhythm from the mockup.
+/// Serif section heading with a trailing count — the editorial rhythm from the
+/// mockup, without the old hairline rule or uppercase aside label.
 private struct SectionHeader: View {
     let title: String
     let count: Int
-    let aside: String
     let isFirst: Bool
 
     var body: some View {
@@ -131,18 +121,10 @@ private struct SectionHeader: View {
                 .foregroundStyle(Ledger.quieter)
                 .monospacedDigit()
             Spacer(minLength: 8)
-            Text(aside)
-                .font(.system(size: 11))
-                .textCase(.uppercase)
-                .tracking(0.6)
-                .foregroundStyle(Ledger.quieter)
         }
         .padding(.horizontal, 8)
         .padding(.bottom, 6)
         .padding(.top, isFirst ? 0 : Ledger.Space.beforeHeading)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(Ledger.line).frame(height: 1)
-        }
         .padding(.bottom, Ledger.Space.afterHeading)
     }
 }

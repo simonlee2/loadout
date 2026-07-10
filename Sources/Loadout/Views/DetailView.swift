@@ -18,6 +18,8 @@ struct DetailView: View {
                 systemImage: "sidebar.right",
                 description: Text("Select a skill from the matrix to see its details.")
             )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Ledger.paper)
         }
     }
 }
@@ -161,55 +163,73 @@ private struct SkillDetailView: View {
 
     // MARK: Actions
 
+    /// Whether any secondary action exists, so the second row is only emitted
+    /// when it would have content.
+    private func hasSecondaryActions(_ installation: SkillInstallation) -> Bool {
+        canAdopt || store.canUninstall(installation) || registryStore.collectionAvailable
+    }
+
     @ViewBuilder
     private func actionsRow(_ installation: SkillInstallation) -> some View {
-        HStack(spacing: 12) {
-            SkillEnableToggle(installation: installation, store: store, showsLabel: true)
+        // Two-row layout so nothing truncates in the narrow detail column:
+        // row 1 = the enabled toggle + the primary "Review Update"; row 2 =
+        // the secondary actions. Labels stay full-width.
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                SkillEnableToggle(installation: installation, store: store, showsLabel: true)
 
-            if let update = availableUpdate {
-                Button {
-                    reviewingUpdate = true
-                } label: {
-                    Label("Review Update \(RowStatus.shortVersion(update))", systemImage: "arrow.down.circle")
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(Ledger.accent)
-            }
-
-            if canAdopt {
-                Button("Adopt & Sync…") {
-                    adopting = true
-                }
-                .disabled(store.isScanning)
-            }
-
-            if store.canUninstall(installation) {
-                Button("Uninstall…", role: .destructive) {
-                    confirmingUninstall = true
-                }
-                .disabled(store.isScanning)
-            }
-
-            if registryStore.collectionAvailable {
-                Button {
-                    publishing = true
-                    Task {
-                        await registryStore.publishToCollection(installation)
-                        publishing = false
+                if let update = availableUpdate {
+                    Button {
+                        reviewingUpdate = true
+                    } label: {
+                        Label("Review Update \(RowStatus.shortVersion(update))", systemImage: "arrow.down.circle")
                     }
-                } label: {
-                    if publishing {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Label("Add to My Collection", systemImage: "icloud.and.arrow.up")
-                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Ledger.accent)
                 }
-                .disabled(publishing)
-                .help("Publish this skill's files to your iCloud collection")
+
+                Spacer(minLength: 0)
             }
 
-            Spacer()
+            if hasSecondaryActions(installation) {
+                HStack(spacing: 12) {
+                    if canAdopt {
+                        Button("Adopt & Sync…") {
+                            adopting = true
+                        }
+                        .disabled(store.isScanning)
+                    }
+
+                    if store.canUninstall(installation) {
+                        Button("Uninstall…", role: .destructive) {
+                            confirmingUninstall = true
+                        }
+                        .disabled(store.isScanning)
+                    }
+
+                    if registryStore.collectionAvailable {
+                        Button {
+                            publishing = true
+                            Task {
+                                await registryStore.publishToCollection(installation)
+                                publishing = false
+                            }
+                        } label: {
+                            if publishing {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Label("Add to My Collection", systemImage: "icloud.and.arrow.up")
+                            }
+                        }
+                        .disabled(publishing)
+                        .help("Publish this skill's files to your iCloud collection")
+                    }
+
+                    Spacer(minLength: 0)
+                }
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 4)
         .sheet(isPresented: $adopting) {
             AdoptSheet(

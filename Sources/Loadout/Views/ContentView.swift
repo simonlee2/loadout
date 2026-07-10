@@ -18,6 +18,9 @@ struct ContentView: View {
     @State private var projectSkillStates: [ProjectSkillState] = []
     @State private var searchText = ""
     @State private var statusCache = RowStatusCache()
+    /// Drives the scan-error popover, surfaced from a toolbar warning icon that
+    /// appears only when the latest scan reported problems.
+    @State private var showingScanErrors = false
     // Snapshot harness only: the update review sheet is a separate NSWindow that
     // WindowSnapshot's layer-tree capture can't reach, so LOADOUT_SNAPSHOT_UPDATE
     // presents the sheet's content as an inline overlay for the capture instead.
@@ -103,7 +106,11 @@ struct ContentView: View {
             )
             .navigationSplitViewColumnWidth(min: 200, ideal: 240)
         } content: {
-            Group {
+            // A real container (not a layout-transparent `Group`) as the column
+            // root so the ScrollView inside is an inset child that respects the
+            // toolbar's top safe area, rather than a bare-ScrollView root that
+            // the split view lets extend up under the unified toolbar.
+            VStack(spacing: 0) {
                 if let registryID = selectedRegistryID {
                     RegistryBrowserView(
                         registryID: registryID,
@@ -120,26 +127,25 @@ struct ContentView: View {
                         selection: $selectedProjectSkillID
                     )
                 } else {
-                    VStack(spacing: 0) {
-                        MatrixView(
-                            rows: visibleRows,
-                            agents: store.activeAgents,
-                            store: store,
-                            lockVersions: lockVersions,
-                            updatesAvailable: registryStore.updatesAvailable,
-                            statusCache: statusCache,
-                            selection: $selectedRowID
-                        )
-                        Divider()
-                        StatusBarView(store: store)
-                    }
+                    MatrixView(
+                        rows: visibleRows,
+                        agents: store.activeAgents,
+                        store: store,
+                        lockVersions: lockVersions,
+                        updatesAvailable: registryStore.updatesAvailable,
+                        statusCache: statusCache,
+                        selection: $selectedRowID
+                    )
                 }
             }
             .background(Ledger.paper.ignoresSafeArea())
             .navigationSplitViewColumnWidth(min: 420, ideal: 620)
             .navigationTitle("Loadout")
         } detail: {
-            Group {
+            // Same structural fix as the content column: a `VStack` root keeps
+            // the detail ScrollView below the unified toolbar instead of letting
+            // it (and its scroll indicator) reach the very top of the window.
+            VStack(spacing: 0) {
                 if let registryID = selectedRegistryID {
                     RegistryDetailView(
                         skill: selectedRegistrySkill(in: registryID),
@@ -180,6 +186,7 @@ struct ContentView: View {
             }
         }
         .onChange(of: sidebarSelection) {
+            selectedRowID = nil
             selectedRegistrySkillID = nil
             selectedProjectSkillID = nil
         }
@@ -198,6 +205,30 @@ struct ContentView: View {
             prompt: searchPrompt
         )
         .toolbar {
+            if !store.scanErrors.isEmpty {
+                ToolbarItem(placement: .automatic) {
+                    Button {
+                        showingScanErrors.toggle()
+                    } label: {
+                        Label("\(store.scanErrors.count)", systemImage: "exclamationmark.triangle.fill")
+                    }
+                    .tint(.yellow)
+                    .help("Scan errors")
+                    .popover(isPresented: $showingScanErrors, arrowEdge: .bottom) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Scan Errors")
+                                .font(.headline)
+                            ForEach(store.scanErrors, id: \.self) { error in
+                                Label(error, systemImage: "xmark.octagon")
+                                    .font(.callout)
+                                    .textSelection(.enabled)
+                            }
+                        }
+                        .padding(12)
+                        .frame(maxWidth: 360, alignment: .leading)
+                    }
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     Task { await store.rescan() }

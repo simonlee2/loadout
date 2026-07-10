@@ -120,6 +120,7 @@ struct SidebarView: View {
                     }
                     .buttonStyle(.borderless)
                     .controlSize(.small)
+                    .padding(.trailing, 4)
                     .help("Add a git repo as a registry…")
                 }
             }
@@ -155,6 +156,7 @@ struct SidebarView: View {
             }
             .buttonStyle(.borderless)
             .controlSize(.small)
+            .padding(.trailing, 4)
             .help("Add project folder…")
         }
     }
@@ -192,6 +194,7 @@ struct SidebarView: View {
         }
         .toggleStyle(.switch)
         .controlSize(.mini)
+        .tint(Ledger.accent)
         .font(.callout)
         .foregroundStyle(.secondary)
     }

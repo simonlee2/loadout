@@ -28,6 +28,7 @@ struct RegistryBrowserView: View {
         if state.isLoading && state.skills.isEmpty {
             ProgressView("Loading skills…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Ledger.paper)
         } else if let error = state.error, state.skills.isEmpty {
             ContentUnavailableView {
                 Label("Couldn't Load Registry", systemImage: "exclamationmark.triangle")
@@ -38,6 +39,8 @@ struct RegistryBrowserView: View {
                     Task { await loadContent(force: true) }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Ledger.paper)
         } else if state.skills.isEmpty {
             ContentUnavailableView(
                 searchText.isEmpty ? "No Featured Skills" : "No Results",
@@ -48,13 +51,26 @@ struct RegistryBrowserView: View {
                         : "No skills match “\(searchText)”."
                 )
             )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Ledger.paper)
         } else {
-            List(state.skills, selection: $selection) { skill in
-                RegistrySkillRow(skill: skill, store: store)
-                    .tag(skill.id)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(state.skills) { skill in
+                        RegistrySkillRow(
+                            skill: skill,
+                            store: store,
+                            isSelected: selection == skill.id,
+                            onSelect: { selection = skill.id }
+                        )
+                    }
+                }
+                .frame(maxWidth: Ledger.Space.measure)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, Ledger.Space.gutter)
+                .padding(.top, Ledger.Space.top)
+                .padding(.bottom, 12)
             }
-            .listStyle(.inset)
-            .scrollContentBackground(.hidden)
             .background(Ledger.paper)
         }
     }
@@ -87,47 +103,73 @@ private struct BrowseKey: Hashable {
 private struct RegistrySkillRow: View {
     let skill: RegistrySkill
     let store: RegistryStore
+    let isSelected: Bool
+    let onSelect: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(alignment: .center, spacing: 14) {
+            VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(skill.name)
-                        .font(.headline)
+                        .font(.system(size: 14.5, weight: .medium))
+                        .foregroundStyle(isSelected ? Ledger.accentInk : Ledger.ink)
                         .lineLimit(1)
                     if skill.slug != skill.name {
                         Text(skill.slug)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 11.5, design: .monospaced))
+                            .foregroundStyle(Ledger.quieter)
                             .lineLimit(1)
                     }
                 }
 
                 if let summary = skill.summary, !summary.isEmpty {
                     Text(summary)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Ledger.quiet)
                         .lineLimit(1)
+                        .truncationMode(.tail)
                 }
 
-                HStack(spacing: 6) {
+                HStack(spacing: 10) {
                     if let count = skill.installCount {
-                        Label(RegistryFormat.installs(count), systemImage: "arrow.down.circle")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        Text(RegistryFormat.installs(count))
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(Ledger.quieter)
                     }
                     if let version = skill.version {
-                        RegistryChip(text: version)
+                        Text(version)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(Ledger.quieter)
                     }
                     AuditChip(status: skill.audit)
                 }
             }
-
-            Spacer(minLength: 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             RegistryInstallControl(skill: skill, store: store)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Ledger.Space.rowV)
+        .padding(.horizontal, Ledger.Space.rowH)
+        .background(rowBackground)
+        .overlay(alignment: .bottom) {
+            if !isSelected {
+                Rectangle().fill(Ledger.lineSoft).frame(height: 1)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onSelect)
+    }
+
+    @ViewBuilder
+    private var rowBackground: some View {
+        if isSelected {
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Ledger.surface)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .strokeBorder(Ledger.accent.opacity(0.28), lineWidth: 1)
+                )
+        }
     }
 }
 
@@ -148,6 +190,8 @@ struct RegistryDetailView: View {
                 systemImage: "sidebar.right",
                 description: Text("Select a skill from the registry to see its details.")
             )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Ledger.paper)
         }
     }
 }
