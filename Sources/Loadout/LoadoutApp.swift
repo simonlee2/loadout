@@ -58,8 +58,10 @@ struct LoadoutApp: App {
                 journal: journal
             )
         }
+        // WellKnownAdapter (the /.well-known/skills convention) stays unwired
+        // until a real site serves an index — add per-site instances here.
         return RegistryStore(
-            adapters: [SkillsShAdapter()],
+            adapters: [SkillsShAdapter(), ClawHubAdapter()],
             library: SkillLibrary(),
             journal: journal
         )
