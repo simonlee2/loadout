@@ -46,8 +46,10 @@ struct ProjectView: View {
                 )
             } else {
                 table
+                    .scrollContentBackground(.hidden)
             }
         }
+        .background(Ledger.paper)
     }
 
     // MARK: Header
@@ -55,10 +57,11 @@ struct ProjectView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(project.name)
-                .font(.title3.weight(.semibold))
+                .font(.system(size: 18, weight: .semibold, design: .serif))
+                .foregroundStyle(Ledger.ink)
             Text(project.path)
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Ledger.quiet)
                 .textSelection(.enabled)
                 .lineLimit(1)
                 .truncationMode(.middle)

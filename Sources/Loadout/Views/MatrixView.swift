@@ -1,7 +1,10 @@
 import SwiftUI
 
-/// Center column: the inventory matrix. One row per skill slug, one column per
-/// active agent showing that agent's state, plus a Skill column and Origin chip.
+/// Center column: the inventory as a grouped paper ledger. Rows are bucketed
+/// into "Your skills", "System", and "From registries", each with a serif
+/// heading and count. One row per skill slug; the trailing cluster shows each
+/// active agent's presence + anti-bounce toggle, then a quiet small-caps status
+/// word. Selecting a row drives the detail column (unchanged behavior).
 struct MatrixView: View {
     let rows: [SkillRow]
     let agents: [AgentID]
@@ -20,6 +23,46 @@ struct MatrixView: View {
         )
     }
 
+    /// Which ledger section a row belongs to. Priority: library-managed rows go
+    /// to "From registries"; otherwise a user-scoped installation makes it a
+    /// personal skill, a system one makes it System, and anything else (plugins,
+    /// project-only) falls back to the personal shelf so no row is ever dropped.
+    private enum Bucket: Int, CaseIterable {
+        case user, system, registries
+
+        var title: String {
+            switch self {
+            case .user: "Your skills"
+            case .system: "System"
+            case .registries: "From registries"
+            }
+        }
+
+        var aside: String {
+            switch self {
+            case .user: "Yours"
+            case .system: "Built in"
+            case .registries: "Managed"
+            }
+        }
+    }
+
+    private func bucket(for row: SkillRow) -> Bucket {
+        if lockVersions[row.slug] != nil { return .registries }
+        let origins = Set(row.installations.map(\.origin.kind))
+        if origins.contains(.user) { return .user }
+        if origins.contains(.system) { return .system }
+        if origins.contains(.plugin) { return .registries }
+        return .user
+    }
+
+    private var grouped: [(bucket: Bucket, rows: [SkillRow])] {
+        Bucket.allCases.compactMap { bucket in
+            let matching = rows.filter { self.bucket(for: $0) == bucket }
+            return matching.isEmpty ? nil : (bucket, matching)
+        }
+    }
+
     var body: some View {
         Group {
             if rows.isEmpty {
@@ -28,71 +71,174 @@ struct MatrixView: View {
                     systemImage: "square.grid.2x2",
                     description: Text("Nothing matches the current filter or search.")
                 )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Ledger.paper)
             } else {
-                table
+                ledger
             }
         }
     }
 
-    private var table: some View {
-        Table(rows, selection: $selection) {
-            TableColumn("Skill") { row in
-                SkillCell(row: row)
-            }
-            .width(min: 190, ideal: 220)
-
-            TableColumnForEach(agents) { agent in
-                TableColumn(agent.displayName) { (row: SkillRow) in
-                    AgentStateCell(installation: row.installation(for: agent), store: store)
+    private var ledger: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(grouped.enumerated()), id: \.element.bucket) { index, group in
+                    SectionHeader(
+                        title: group.bucket.title,
+                        count: group.rows.count,
+                        aside: group.bucket.aside,
+                        isFirst: index == 0
+                    )
+                    ForEach(group.rows) { row in
+                        LedgerRow(
+                            row: row,
+                            agents: agents,
+                            store: store,
+                            status: status(for: row),
+                            isSelected: selection == row.id,
+                            onSelect: { selection = row.id }
+                        )
+                    }
                 }
-                .width(min: 64, ideal: 84)
             }
-
-            TableColumn("Origin") { row in
-                OriginCell(row: row)
-            }
-            .width(min: 110, ideal: 130)
-
-            TableColumn("Status") { row in
-                StatusCell(status: status(for: row))
-            }
-            .width(min: 100, ideal: 120)
+            .frame(maxWidth: Ledger.Space.measure)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, Ledger.Space.gutter)
+            .padding(.top, Ledger.Space.top)
+            .padding(.bottom, 12)
         }
+        .background(Ledger.paper)
     }
 }
 
-/// Skill name + a dimmed one-line description.
-private struct SkillCell: View {
-    let row: SkillRow
+// MARK: - Section heading
+
+/// Serif section heading with a trailing count and a quiet uppercase aside,
+/// underlined by a hairline — the editorial rhythm from the mockup.
+private struct SectionHeader: View {
+    let title: String
+    let count: Int
+    let aside: String
+    let isFirst: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(row.displayName)
-                .lineLimit(1)
-            if let summary = row.summary, !summary.isEmpty {
-                Text(summary)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(title)
+                .font(Ledger.serifHeading())
+                .foregroundStyle(Ledger.ink)
+            Text("\(count)")
+                .font(.system(size: 12.5))
+                .foregroundStyle(Ledger.quieter)
+                .monospacedDigit()
+            Spacer(minLength: 8)
+            Text(aside)
+                .font(.system(size: 11))
+                .textCase(.uppercase)
+                .tracking(0.6)
+                .foregroundStyle(Ledger.quieter)
         }
-        .padding(.vertical, 2)
+        .padding(.horizontal, 8)
+        .padding(.bottom, 6)
+        .padding(.top, isFirst ? 0 : Ledger.Space.beforeHeading)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Ledger.line).frame(height: 1)
+        }
+        .padding(.bottom, Ledger.Space.afterHeading)
     }
 }
 
-/// A single agent's state for a row: a live switch, a disabled switch (with a
-/// reason), or a faint dash when the skill is absent for that agent.
-struct AgentStateCell: View {
+// MARK: - Ledger row
+
+/// One skill: name + one-line description on the left, per-agent presence +
+/// toggle and a quiet status word on the right. The whole row is a selection
+/// target; the toggles remain independently interactive.
+private struct LedgerRow: View {
+    let row: SkillRow
+    let agents: [AgentID]
+    let store: InventoryStore
+    let status: RowStatus
+    let isSelected: Bool
+    let onSelect: () -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 14) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.displayName)
+                    .font(.system(size: 14.5, weight: .medium))
+                    .foregroundStyle(isSelected ? Ledger.accentInk : Ledger.ink)
+                    .lineLimit(1)
+                if let summary = row.summary, !summary.isEmpty {
+                    Text(summary)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Ledger.quiet)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            HStack(spacing: 12) {
+                ForEach(agents) { agent in
+                    AgentPresenceCell(
+                        installation: row.installation(for: agent),
+                        agent: agent,
+                        store: store
+                    )
+                }
+            }
+
+            LedgerStatusLabel(status: status)
+        }
+        .padding(.vertical, Ledger.Space.rowV)
+        .padding(.horizontal, Ledger.Space.rowH)
+        .background(rowBackground)
+        .overlay(alignment: .bottom) {
+            if !isSelected {
+                Rectangle().fill(Ledger.lineSoft).frame(height: 1)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onSelect)
+    }
+
+    @ViewBuilder
+    private var rowBackground: some View {
+        if isSelected {
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Ledger.surface)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .strokeBorder(Ledger.accent.opacity(0.28), lineWidth: 1)
+                )
+        }
+    }
+}
+
+/// One agent's presence for a row: its monogram plus the live anti-bounce
+/// toggle, or the monogram beside a faint dash when the skill is absent for
+/// that agent. Fixed width so clusters align down the ledger.
+private struct AgentPresenceCell: View {
     let installation: SkillInstallation?
+    let agent: AgentID
     let store: InventoryStore
 
     var body: some View {
-        if let installation {
-            SkillEnableToggle(installation: installation, store: store)
-        } else {
-            Text("—")
-                .foregroundStyle(.tertiary)
+        HStack(spacing: 5) {
+            Text(agent.monogram)
+                .font(.system(size: 10.5, weight: .bold))
+                .tracking(0.3)
+                .foregroundStyle(installation == nil ? Ledger.quieter.opacity(0.6) : Ledger.inkSoft)
+
+            if let installation {
+                SkillEnableToggle(installation: installation, store: store)
+            } else {
+                Text("—")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Ledger.quieter.opacity(0.6))
+                    .frame(width: 26)
+            }
         }
+        .frame(width: 62, alignment: .trailing)
     }
 }
 
@@ -118,6 +264,7 @@ struct SkillEnableToggle: View {
         toggle
             .toggleStyle(.switch)
             .controlSize(showsLabel ? .small : .mini)
+            .tint(Ledger.accent)
             .disabled(!canToggle || store.isScanning)
             .help(helpText)
             .onChange(of: installation.isEnabled) { pending = nil }
@@ -146,6 +293,7 @@ struct SkillEnableToggle: View {
     @ViewBuilder private var toggle: some View {
         if showsLabel {
             Toggle(isOn ? "Enabled" : "Disabled", isOn: binding)
+                .fixedSize()
         } else {
             Toggle("Enabled", isOn: binding)
                 .labelsHidden()
@@ -203,42 +351,19 @@ struct SkillEnableToggle: View {
     }
 }
 
-/// Distinct origin labels for the row, rendered as chips.
-private struct OriginCell: View {
-    let row: SkillRow
-
-    private var labels: [String] {
-        var seen = Set<String>()
-        var result: [String] = []
-        for installation in row.installations {
-            let label = installation.origin.label
-            if seen.insert(label).inserted {
-                result.append(label)
-            }
-        }
-        return result
-    }
-
-    var body: some View {
-        HStack(spacing: 4) {
-            ForEach(labels, id: \.self) { label in
-                OriginChip(text: label)
-            }
-        }
-    }
-}
-
-/// Small pill styling reused in the matrix and detail header.
+/// Small pill styling reused in the detail header and project view. Kept on the
+/// ledger palette so it reads as paper, not the old skin.
 struct OriginChip: View {
     let text: String
 
     var body: some View {
         Text(text)
-            .font(.caption)
+            .font(.system(size: 11))
             .lineLimit(1)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(.quaternary, in: Capsule())
+            .foregroundStyle(Ledger.inkSoft)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(Ledger.paper2, in: Capsule())
+            .overlay(Capsule().strokeBorder(Ledger.line, lineWidth: 0.5))
     }
 }
-

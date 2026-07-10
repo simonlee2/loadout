@@ -55,9 +55,24 @@ private struct SkillDetailView: View {
         registryStore.updatesAvailable[row.slug]
     }
 
+    /// The library lock entry for this row, when Loadout manages it.
+    private var lockEntry: LockEntry? {
+        registryStore.lockEntries.first { $0.slug == row.slug }
+    }
+
     /// The currently-managed version, for the review sheet's "old → new" header.
     private var managedVersion: String? {
-        registryStore.lockEntries.first { $0.slug == row.slug }?.version
+        lockEntry?.version
+    }
+
+    /// Dimmed-mono provenance line, mirroring the mockup
+    /// ("Version 1.4.0 · cardinalblue · 1c27b177"). nil for unmanaged skills.
+    private var provenance: String? {
+        guard let entry = lockEntry else { return nil }
+        var parts = ["Version \(entry.version)"]
+        if !entry.registry.isEmpty { parts.append(entry.registry) }
+        parts.append(String(entry.contentHash.prefix(8)))
+        return parts.joined(separator: " · ")
     }
 
     /// Agents that don't yet have this skill — candidates for "sync to".
@@ -85,7 +100,7 @@ private struct SkillDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 header
-                Divider()
+                rule
                 if row.installations.count > 1 {
                     installationPicker
                 }
@@ -100,6 +115,7 @@ private struct SkillDetailView: View {
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .background(Ledger.paper)
         .navigationTitle(row.displayName)
         .task(id: row.id) {
             // Reset the file picker when the selected row changes.
@@ -115,10 +131,11 @@ private struct SkillDetailView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(row.displayName)
-                .font(.title2.weight(.semibold))
+                .font(.system(size: 22, weight: .semibold, design: .serif))
+                .foregroundStyle(Ledger.ink)
             Text(row.slug)
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Ledger.quiet)
                 .textSelection(.enabled)
 
             FlowChips(installations: row.installations)
@@ -126,7 +143,20 @@ private struct SkillDetailView: View {
             if let installation {
                 actionsRow(installation)
             }
+
+            if let provenance {
+                Text(provenance)
+                    .font(.system(size: 11.5, design: .monospaced))
+                    .foregroundStyle(Ledger.quieter)
+                    .textSelection(.enabled)
+                    .padding(.top, 2)
+            }
         }
+    }
+
+    /// A quiet hairline, replacing the default `Divider()` on the paper surface.
+    private var rule: some View {
+        Rectangle().fill(Ledger.line).frame(height: 1)
     }
 
     // MARK: Actions
@@ -143,7 +173,7 @@ private struct SkillDetailView: View {
                     Label("Review Update \(RowStatus.shortVersion(update))", systemImage: "arrow.down.circle")
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.accentColor)
+                .tint(Ledger.accent)
             }
 
             if canAdopt {
@@ -228,7 +258,8 @@ private struct SkillDetailView: View {
     private var bodySection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("SKILL.md")
-                .font(.headline)
+                .font(Ledger.serifHeading(15))
+                .foregroundStyle(Ledger.ink)
 
             switch document {
             case .loading:
@@ -255,14 +286,16 @@ private struct SkillDetailView: View {
     private func metadataSection(_ extra: [String: String]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Metadata")
-                .font(.headline)
+                .font(Ledger.serifHeading(15))
+                .foregroundStyle(Ledger.ink)
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 4) {
                 ForEach(extra.keys.sorted(), id: \.self) { key in
                     GridRow {
                         Text(key)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Ledger.quiet)
                             .gridColumnAlignment(.leading)
                         Text(extra[key] ?? "")
+                            .foregroundStyle(Ledger.inkSoft)
                             .textSelection(.enabled)
                     }
                 }
@@ -276,10 +309,11 @@ private struct SkillDetailView: View {
     private func pathSection(_ installation: SkillInstallation) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Location")
-                .font(.headline)
+                .font(Ledger.serifHeading(15))
+                .foregroundStyle(Ledger.ink)
             Text(installation.directory.path)
                 .font(.callout.monospaced())
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Ledger.quiet)
                 .textSelection(.enabled)
                 .lineLimit(3)
                 .truncationMode(.middle)
@@ -379,17 +413,20 @@ private struct FlowChips: View {
         HStack(spacing: 6) {
             ForEach(installations) { installation in
                 HStack(spacing: 4) {
-                    Image(systemName: installation.agent.symbol)
+                    Text(installation.agent.monogram)
+                        .fontWeight(.bold)
                     Text(installation.origin.label)
                     Text("·")
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Ledger.quieter)
                     Text(installation.isEnabled ? "On" : "Off")
-                        .foregroundStyle(installation.isEnabled ? .green : .secondary)
+                        .foregroundStyle(installation.isEnabled ? Ledger.sage : Ledger.quiet)
                 }
                 .font(.caption)
+                .foregroundStyle(Ledger.inkSoft)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(.quaternary, in: Capsule())
+                .background(Ledger.paper2, in: Capsule())
+                .overlay(Capsule().strokeBorder(Ledger.line, lineWidth: 0.5))
             }
         }
     }

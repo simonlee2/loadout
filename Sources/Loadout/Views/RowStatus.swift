@@ -1,4 +1,3 @@
-import SwiftUI
 import Foundation
 
 /// Computed sync/attention status for one matrix row. `compute` is pure given
@@ -110,49 +109,5 @@ final class RowStatusCache {
         let value = try? TreeHash.hash(directory: installation.directory)
         hashes[key] = value
         return value
-    }
-}
-
-/// The matrix "Status" cell: colored chips for managed/update/synced/differs,
-/// a plain secondary label for single-agent rows, and a faint dash when the
-/// cross-agent comparison can't be made.
-struct StatusCell: View {
-    let status: RowStatus
-
-    var body: some View {
-        switch status {
-        case .managed(let version):
-            StatusChip(text: "Managed \(RowStatus.shortVersion(version))", tint: .accentColor)
-        case .update(let display):
-            StatusChip(text: "Update \(display)", tint: .orange)
-        case .synced:
-            StatusChip(text: "Synced", tint: .green)
-        case .differs:
-            StatusChip(text: "Differs", tint: .orange)
-        case .agentOnly(let agent):
-            Text("\(agent.displayName) only")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-        case .unknown:
-            Text("—")
-                .foregroundStyle(.tertiary)
-        }
-    }
-}
-
-/// A tinted status pill. Mirrors `OriginChip`'s geometry with a colored fill.
-struct StatusChip: View {
-    let text: String
-    let tint: Color
-
-    var body: some View {
-        Text(text)
-            .font(.caption)
-            .lineLimit(1)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .foregroundStyle(tint)
-            .background(tint.opacity(0.15), in: Capsule())
     }
 }

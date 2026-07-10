@@ -54,6 +54,8 @@ struct RegistryBrowserView: View {
                     .tag(skill.id)
             }
             .listStyle(.inset)
+            .scrollContentBackground(.hidden)
+            .background(Ledger.paper)
         }
     }
 
@@ -159,7 +161,8 @@ private struct RegistrySkillDetail: View {
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(skill.name)
-                        .font(.title2.weight(.semibold))
+                        .font(.system(size: 22, weight: .semibold, design: .serif))
+                        .foregroundStyle(Ledger.ink)
                     if skill.slug != skill.name {
                         Text(skill.slug)
                             .font(.callout)
@@ -181,7 +184,7 @@ private struct RegistrySkillDetail: View {
 
                 if let summary = skill.summary, !summary.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Summary").font(.headline)
+                        Text("Summary").font(Ledger.serifHeading(15)).foregroundStyle(Ledger.ink)
                         Text(summary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .textSelection(.enabled)
@@ -189,7 +192,7 @@ private struct RegistrySkillDetail: View {
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Details").font(.headline)
+                    Text("Details").font(Ledger.serifHeading(15)).foregroundStyle(Ledger.ink)
                     Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 4) {
                         detailRow("Registry", skill.registry)
                         detailRow("Identifier", skill.identifier)
@@ -206,7 +209,7 @@ private struct RegistrySkillDetail: View {
 
                 if let url = skill.sourceURL {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Source").font(.headline)
+                        Text("Source").font(Ledger.serifHeading(15)).foregroundStyle(Ledger.ink)
                         Link(destination: url) {
                             Label(url.absoluteString, systemImage: "link")
                         }

@@ -33,8 +33,10 @@ struct HistoryView: View {
                         HistoryRow(entry: entry) { confirmingRevert = entry }
                     }
                 }
+                .scrollContentBackground(.hidden)
             }
         }
+        .background(Ledger.paper)
         .navigationTitle("History")
         .frame(minWidth: 360, minHeight: 320)
         .toolbar {

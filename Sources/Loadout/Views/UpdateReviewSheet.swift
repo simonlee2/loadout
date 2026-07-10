@@ -39,6 +39,7 @@ struct UpdateReviewSheet: View {
             }
         }
         .frame(minWidth: 560, minHeight: 480)
+        .background(Ledger.paper)
         .task { await stage() }
         .onDisappear { discardIfNeeded() }
     }
@@ -86,6 +87,7 @@ struct UpdateReviewSheet: View {
             }
         }
         .listStyle(.inset)
+        .scrollContentBackground(.hidden)
         Divider()
         footer(staged)
     }
@@ -93,10 +95,11 @@ struct UpdateReviewSheet: View {
     private func header(_ staged: StagedUpdate) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("\(staged.slug) — \(RowStatus.shortVersion(oldVersion ?? "?")) → \(RowStatus.shortVersion(staged.newVersion))")
-                .font(.title3.weight(.semibold))
+                .font(.system(size: 18, weight: .semibold, design: .serif))
+                .foregroundStyle(Ledger.ink)
             Text(Self.summaryLine(staged.changes))
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Ledger.quiet)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)

@@ -29,6 +29,18 @@ struct ContentView: View {
             || ProcessInfo.processInfo.environment["LOADOUT_AUTODRIVE"] != nil)
             ? .doubleColumn : .all
 
+    /// Snapshot harness only: force an appearance so both the light and dark
+    /// Paper Ledger palettes can be captured regardless of the host's system
+    /// setting (`LOADOUT_APPEARANCE=light|dark`). nil elsewhere, so normal runs
+    /// follow the system appearance untouched.
+    private var snapshotColorScheme: ColorScheme? {
+        switch ProcessInfo.processInfo.environment["LOADOUT_APPEARANCE"] {
+        case "light": return .light
+        case "dark": return .dark
+        default: return nil
+        }
+    }
+
     /// Rows after applying the sidebar filter and the search field.
     private var visibleRows: [SkillRow] {
         store.rows.filter { matchesSidebar($0) && matchesSearch($0) }
@@ -123,6 +135,7 @@ struct ContentView: View {
                     }
                 }
             }
+            .background(Ledger.paper.ignoresSafeArea())
             .navigationSplitViewColumnWidth(min: 420, ideal: 620)
             .navigationTitle("Loadout")
         } detail: {
@@ -142,8 +155,10 @@ struct ContentView: View {
                     DetailView(row: selectedRow, store: store, registryStore: registryStore)
                 }
             }
+            .background(Ledger.paper.ignoresSafeArea())
             .navigationSplitViewColumnWidth(min: 320, ideal: 380, max: 400)
         }
+        .preferredColorScheme(snapshotColorScheme)
         .overlay {
             if let slug = snapshotUpdateSlug {
                 ZStack {

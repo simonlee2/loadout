@@ -24,7 +24,7 @@ struct StatusBarView: View {
             }
             Text(summary)
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Ledger.quiet)
 
             Spacer()
 
@@ -54,5 +54,6 @@ struct StatusBarView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
+        .background(Ledger.paper2)
     }
 }
