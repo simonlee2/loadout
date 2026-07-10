@@ -7,6 +7,10 @@ struct ContentView: View {
     @State private var sidebarSelection: SidebarSelection = .allSkills
     @State private var selectedRowID: SkillRow.ID?
     @State private var searchText = ""
+    // Snapshot harness: vibrant sidebar content can't render offscreen, so
+    // captures collapse it rather than show a blank column.
+    @State private var columnVisibility: NavigationSplitViewVisibility =
+        ProcessInfo.processInfo.environment["LOADOUT_SNAPSHOT"] != nil ? .doubleColumn : .all
 
     /// Rows after applying the sidebar filter and the search field.
     private var visibleRows: [SkillRow] {
@@ -19,7 +23,7 @@ struct ContentView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarView(store: store, selection: $sidebarSelection)
                 .navigationSplitViewColumnWidth(min: 200, ideal: 240)
         } content: {
@@ -57,6 +61,10 @@ struct ContentView: View {
         }
         .task {
             await store.rescan()
+            // Snapshot harness: select a row so the detail pane has content.
+            if ProcessInfo.processInfo.environment["LOADOUT_SNAPSHOT"] != nil {
+                selectedRowID = (visibleRows.first { $0.summary != nil } ?? visibleRows.first)?.id
+            }
         }
     }
 
