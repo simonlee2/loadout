@@ -10,6 +10,11 @@ struct ContentView: View {
     @State private var sidebarSelection: SidebarSelection = .allSkills
     @State private var selectedRowID: SkillRow.ID?
     @State private var selectedRegistrySkillID: RegistrySkill.ID?
+    @State private var selectedProjectSkillID: ProjectSkillState.ID?
+    /// Skill states for the selected project. `projectSkillStates(in:)` is a
+    /// function call (not cached in the store), so the result is held here and
+    /// recomputed via `.task(id:)` whenever the project or scan date changes.
+    @State private var projectSkillStates: [ProjectSkillState] = []
     @State private var searchText = ""
     @State private var statusCache = RowStatusCache()
     // Snapshot harness only: the update review sheet is a separate NSWindow that
@@ -62,6 +67,19 @@ struct ContentView: View {
         return registryStore.browse[registryID]?.skills.first { $0.id == selectedRegistrySkillID }
     }
 
+    /// The project when the sidebar has one selected, else nil.
+    private var selectedProject: ProjectRef? {
+        if case .project(let path) = sidebarSelection {
+            return store.projects.first { $0.path == path }
+        }
+        return nil
+    }
+
+    private var selectedProjectSkillState: ProjectSkillState? {
+        guard let selectedProjectSkillID else { return nil }
+        return projectSkillStates.first { $0.id == selectedProjectSkillID }
+    }
+
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarView(
@@ -79,6 +97,14 @@ struct ContentView: View {
                         store: registryStore,
                         searchText: searchText,
                         selection: $selectedRegistrySkillID
+                    )
+                } else if let project = selectedProject {
+                    ProjectView(
+                        project: project,
+                        states: projectSkillStates,
+                        store: store,
+                        searchText: searchText,
+                        selection: $selectedProjectSkillID
                     )
                 } else {
                     VStack(spacing: 0) {
@@ -104,6 +130,12 @@ struct ContentView: View {
                     RegistryDetailView(
                         skill: selectedRegistrySkill(in: registryID),
                         store: registryStore
+                    )
+                } else if selectedProject != nil {
+                    ProjectDetailColumn(
+                        state: selectedProjectSkillState,
+                        store: store,
+                        registryStore: registryStore
                     )
                 } else {
                     DetailView(row: selectedRow, store: store, registryStore: registryStore)
@@ -131,11 +163,23 @@ struct ContentView: View {
                 }
             }
         }
-        .onChange(of: sidebarSelection) { selectedRegistrySkillID = nil }
+        .onChange(of: sidebarSelection) {
+            selectedRegistrySkillID = nil
+            selectedProjectSkillID = nil
+        }
+        // Recompute the project's skill states whenever the selected project
+        // or the scan date changes (each toggle ends in a rescan).
+        .task(id: ProjectStatesKey(path: selectedProject?.path, scan: store.lastScan)) {
+            if let selectedProject {
+                projectSkillStates = store.projectSkillStates(in: selectedProject)
+            } else {
+                projectSkillStates = []
+            }
+        }
         .searchable(
             text: $searchText,
             placement: .toolbar,
-            prompt: selectedRegistryID == nil ? "Search skills" : "Search registry"
+            prompt: searchPrompt
         )
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -200,6 +244,7 @@ struct ContentView: View {
             Text(error)
         }
         .task {
+            store.refreshProjects()
             await store.rescan()
             // Kick off a non-blocking update check now that the first scan has
             // populated the inventory (badges/status fill in as it resolves).
@@ -216,6 +261,11 @@ struct ContentView: View {
             if ProcessInfo.processInfo.environment["LOADOUT_SNAPSHOT"] != nil {
                 selectedRowID = (visibleRows.first { $0.summary != nil } ?? visibleRows.first)?.id
             }
+            // Snapshot harness: pre-select the first project.
+            if ProcessInfo.processInfo.environment["LOADOUT_SNAPSHOT_PROJECT"] != nil,
+               let first = store.projects.first {
+                sidebarSelection = .project(path: first.path)
+            }
             // Snapshot harness: stage + present the update review sheet for a
             // specific slug (as an inline overlay, see `snapshotUpdateSlug`).
             if let slug = ProcessInfo.processInfo.environment["LOADOUT_SNAPSHOT_UPDATE"] {
@@ -229,6 +279,12 @@ struct ContentView: View {
                 await runAutoDrive(outDir: outDir)
             }
         }
+    }
+
+    private var searchPrompt: String {
+        if selectedRegistryID != nil { return "Search registry" }
+        if selectedProject != nil { return "Search project skills" }
+        return "Search skills"
     }
 
     // MARK: Filtering
@@ -248,9 +304,9 @@ struct ContentView: View {
             return row.installations.contains { $0.origin.kind == kind }
         case .agent(let agent):
             return row.installation(for: agent) != nil
-        case .registry:
-            // Registry selection swaps the content column entirely; the matrix
-            // isn't shown, so nothing needs to match.
+        case .registry, .project:
+            // Registry/project selection swaps the content column entirely;
+            // the matrix isn't shown, so nothing needs to match.
             return false
         }
     }
@@ -374,4 +430,11 @@ struct ContentView: View {
 
         NSApp.terminate(nil)
     }
+}
+
+/// Composite `task(id:)` key so either switching projects or a completed
+/// rescan re-derives the selected project's skill states.
+private struct ProjectStatesKey: Hashable {
+    let path: String?
+    let scan: Date?
 }

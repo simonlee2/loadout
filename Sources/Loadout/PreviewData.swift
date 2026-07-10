@@ -35,7 +35,9 @@ struct SampleScanner: AgentScanner {
 
     // MARK: Sample data
 
-    private static let claudeCodeInstallations: [SkillInstallation] = [
+    /// Shared with `PreviewProjectOverrides`, which presents these same
+    /// installations as seen from inside a sample project.
+    static let claudeCodeInstallations: [SkillInstallation] = [
         SkillInstallation(
             agent: .claudeCode,
             slug: "swiftui-patterns",
@@ -170,6 +172,76 @@ struct SampleScanner: AgentScanner {
             lastModified: modified(daysAgo: 45)
         ),
     ]
+}
+
+// MARK: - Project previews
+
+/// In-memory `ProjectOverriding` for sample mode (`LOADOUT_SAMPLE`): two fake
+/// projects whose skill states mix a project-level "off", a project-level "on"
+/// that overrides a user-level "off", and plain default-enabled skills.
+/// `setSkill` mutates only this object — nothing is written to disk.
+@MainActor
+final class PreviewProjectOverrides: ProjectOverriding {
+    private let sampleProjects = [
+        ProjectRef(path: "/Users/simon/Projects/Loadout"),
+        ProjectRef(path: "/Users/simon/Projects/PicCollage"),
+    ]
+
+    /// project path → slug → override. Absent slugs are default-enabled.
+    private var overrides: [String: [String: (enabled: Bool, source: ProjectOverrideSource)]] = [
+        "/Users/simon/Projects/Loadout": [
+            // Off in this project (project-local override).
+            "swiftui-patterns": (enabled: false, source: .projectLocal),
+            // On here even though the user-scope copy is disabled.
+            "deep-research": (enabled: true, source: .projectLocal),
+        ],
+        "/Users/simon/Projects/PicCollage": [
+            // Off because the user's own settings disable it.
+            "imagegen": (enabled: false, source: .user),
+        ],
+    ]
+
+    func projects() throws -> [ProjectRef] {
+        sampleProjects
+    }
+
+    func skillStates(in project: ProjectRef) throws -> [ProjectSkillState] {
+        SampleScanner.claudeCodeInstallations.map { installation in
+            guard let override = overrides[project.path]?[installation.slug] else {
+                return ProjectSkillState(
+                    installation: installation,
+                    isEnabledInProject: true,
+                    source: nil
+                )
+            }
+            return ProjectSkillState(
+                installation: installation,
+                isEnabledInProject: override.enabled,
+                source: override.source
+            )
+        }
+    }
+
+    @discardableResult
+    func setSkill(
+        _ slug: String,
+        enabled: Bool,
+        in project: ProjectRef,
+        journal: ChangeJournal
+    ) throws -> ConfigChange {
+        overrides[project.path, default: [:]][slug] = (enabled: enabled, source: .projectLocal)
+        // Fabricated, un-journaled change so sample mode never touches disk.
+        return ConfigChange(
+            id: UUID(),
+            date: Date(),
+            agent: .claudeCode,
+            kind: .fileEdit,
+            summary: "\(enabled ? "Enable" : "Disable") \(slug) in \(project.name) (preview)",
+            path: "\(project.path)/.claude/settings.local.json",
+            backupPath: nil,
+            isReverted: false
+        )
+    }
 }
 
 // MARK: - Registry previews

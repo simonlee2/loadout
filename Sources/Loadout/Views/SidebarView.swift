@@ -64,6 +64,16 @@ struct SidebarView: View {
                 }
             }
 
+            if !store.projects.isEmpty {
+                Section("Projects") {
+                    ForEach(store.projects) { project in
+                        Label(project.name, systemImage: "folder")
+                            .tag(SidebarSelection.project(path: project.path))
+                            .help(project.path)
+                    }
+                }
+            }
+
             if !registryStore.adapters.isEmpty {
                 Section("Registries") {
                     ForEach(registryStore.adapters, id: \.id) { adapter in
