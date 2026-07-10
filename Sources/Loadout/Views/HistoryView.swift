@@ -118,6 +118,7 @@ private struct HistoryRow: View {
         switch entry.kind {
         case .fileEdit: "doc.text"
         case .directoryMove: "shippingbox"
+        case .pathAdd: "plus.square.on.square"
         }
     }
 }

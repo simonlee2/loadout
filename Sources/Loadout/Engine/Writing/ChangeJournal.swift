@@ -72,6 +72,19 @@ final class ChangeJournal {
         return change
     }
 
+    /// Records a path (directory, file, or symlink) that the caller is about
+    /// to create — e.g. a registry-install deployment. Revert deletes it.
+    func recordPathAdd(agent: AgentID, summary: String, path: URL) throws -> ConfigChange {
+        try ensureDirectories()
+        let change = ConfigChange(
+            id: UUID(), date: Date(), agent: agent, kind: .pathAdd,
+            summary: summary, path: path.path, backupPath: nil,
+            isReverted: false
+        )
+        append(change)
+        return change
+    }
+
     /// Restores the pre-change state: copies the backup over the file (or
     /// deletes it if it did not exist), or moves the shelved directory back.
     func revert(_ change: ConfigChange) throws {
@@ -94,6 +107,13 @@ final class ChangeJournal {
                 at: URL(fileURLWithPath: shelved),
                 to: URL(fileURLWithPath: change.path)
             )
+        case .pathAdd:
+            // Symlinks must be removed as such, never followed.
+            let url = URL(fileURLWithPath: change.path)
+            if (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == true
+                || fileManager.fileExists(atPath: change.path) {
+                try fileManager.removeItem(at: url)
+            }
         }
 
         entries[index].isReverted = true

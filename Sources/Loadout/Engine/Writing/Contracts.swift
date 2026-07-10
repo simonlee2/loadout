@@ -5,6 +5,9 @@ import Foundation
 enum ChangeKind: String, Codable, Sendable {
     case fileEdit
     case directoryMove
+    /// A directory, file, or symlink Loadout created (e.g. a registry
+    /// install deployment). Revert deletes it.
+    case pathAdd
 }
 
 /// One reversible, journaled change to an agent-owned file or skill
