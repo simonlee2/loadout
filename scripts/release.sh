@@ -163,7 +163,12 @@ else
 <dict>
   <key>method</key><string>developer-id</string>
   <key>teamID</key><string>$TEAM_ID</string>
-  <key>signingStyle</key><string>automatic</string>
+  <key>signingStyle</key><string>manual</string>
+  <key>signingCertificate</key><string>Developer ID Application</string>
+  <key>provisioningProfiles</key>
+  <dict>
+    <key>com.simonlee.Loadout</key><string>Loadout Developer ID</string>
+  </dict>
 </dict>
 </plist>
 PLIST
