@@ -27,9 +27,12 @@ enum SkillScan {
 
         var result: [Found] = []
         for entry in entries {
-            let isDirectory = (try? entry.resourceValues(forKeys: [.isDirectoryKey]))?
-                .isDirectory ?? false
-            guard isDirectory else { continue }
+            // fileExists follows symlinks; .isDirectoryKey does not, which
+            // would drop symlinked skill dirs (the D2 deployment mechanism).
+            var isDirectory: ObjCBool = false
+            guard fileManager.fileExists(atPath: entry.path, isDirectory: &isDirectory),
+                  isDirectory.boolValue
+            else { continue }
             if !includeHidden, entry.lastPathComponent.hasPrefix(".") { continue }
 
             let skillFile = entry.appendingPathComponent("SKILL.md", isDirectory: false)

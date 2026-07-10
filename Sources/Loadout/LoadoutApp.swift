@@ -5,7 +5,7 @@ import AppKit
 struct LoadoutApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
-    @State private var store = InventoryStore(scanners: LoadoutApp.makeScanners())
+    @State private var store = LoadoutApp.makeStore()
     @State private var watcher: DirectoryWatcher?
 
     var body: some Scene {
@@ -15,6 +15,29 @@ struct LoadoutApp: App {
         }
         .defaultSize(width: 1100, height: 700)
         .windowToolbarStyle(.unified)
+        .commands {
+            CommandGroup(after: .sidebar) {
+                HistoryCommand()
+            }
+        }
+
+        Window("History", id: "history") {
+            HistoryView(store: store)
+        }
+        .defaultSize(width: 480, height: 560)
+    }
+
+    private static func makeStore() -> InventoryStore {
+        let store = InventoryStore(scanners: makeScanners())
+        // Sample mode stays read-only: its fixture installations carry fake
+        // paths, and real writers would journal them into real configs.
+        if ProcessInfo.processInfo.environment["LOADOUT_SAMPLE"] == nil {
+            store.configureWriting(
+                writers: [ClaudeCodeConfigWriter(), CodexConfigWriter()],
+                journal: ChangeJournal()
+            )
+        }
+        return store
     }
 
     private static func makeScanners() -> [any AgentScanner] {
@@ -51,6 +74,19 @@ struct LoadoutApp: App {
         }
         watcher.start()
         self.watcher = watcher
+    }
+}
+
+/// Menu command that opens the auxiliary History window (⌘Y). Kept as its own
+/// view so it can read `openWindow` from the environment.
+private struct HistoryCommand: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Button("History") {
+            openWindow(id: "history")
+        }
+        .keyboardShortcut("y", modifiers: .command)
     }
 }
 

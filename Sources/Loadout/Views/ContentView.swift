@@ -5,6 +5,7 @@ import AppKit
 struct ContentView: View {
     let store: InventoryStore
 
+    @Environment(\.openWindow) private var openWindow
     @State private var sidebarSelection: SidebarSelection = .allSkills
     @State private var selectedRowID: SkillRow.ID?
     @State private var searchText = ""
@@ -34,6 +35,7 @@ struct ContentView: View {
                 MatrixView(
                     rows: visibleRows,
                     agents: store.activeAgents,
+                    store: store,
                     selection: $selectedRowID
                 )
                 Divider()
@@ -42,7 +44,7 @@ struct ContentView: View {
             .navigationSplitViewColumnWidth(min: 420, ideal: 620)
             .navigationTitle("Loadout")
         } detail: {
-            DetailView(row: selectedRow)
+            DetailView(row: selectedRow, store: store)
                 .navigationSplitViewColumnWidth(min: 320, ideal: 380)
         }
         .searchable(text: $searchText, placement: .toolbar, prompt: "Search skills")
@@ -61,6 +63,26 @@ struct ContentView: View {
                 .disabled(store.isScanning)
                 .help("Rescan for installed skills")
             }
+            ToolbarItem(placement: .automatic) {
+                Button {
+                    openWindow(id: "history")
+                } label: {
+                    Label("History", systemImage: "clock.arrow.circlepath")
+                }
+                .help("Show the change history")
+            }
+        }
+        .alert(
+            "Action Failed",
+            isPresented: Binding(
+                get: { store.lastActionError != nil },
+                set: { presenting in if !presenting { store.lastActionError = nil } }
+            ),
+            presenting: store.lastActionError
+        ) { _ in
+            Button("OK", role: .cancel) { store.lastActionError = nil }
+        } message: { error in
+            Text(error)
         }
         .task {
             await store.rescan()

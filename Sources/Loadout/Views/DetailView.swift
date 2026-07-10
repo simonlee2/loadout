@@ -5,10 +5,11 @@ import AppKit
 /// file for the chosen installation at display time (read-only).
 struct DetailView: View {
     let row: SkillRow?
+    let store: InventoryStore
 
     var body: some View {
         if let row {
-            SkillDetailView(row: row)
+            SkillDetailView(row: row, store: store)
                 .id(row.id)
         } else {
             ContentUnavailableView(
@@ -38,9 +39,11 @@ private enum DocumentState {
 
 private struct SkillDetailView: View {
     let row: SkillRow
+    let store: InventoryStore
 
     @State private var selectedAgent: AgentID?
     @State private var document: DocumentState = .loading
+    @State private var confirmingUninstall = false
 
     /// The installation whose file we're viewing. Falls back to the first.
     private var installation: SkillInstallation? {
@@ -91,6 +94,41 @@ private struct SkillDetailView: View {
                 .textSelection(.enabled)
 
             FlowChips(installations: row.installations)
+
+            if let installation {
+                actionsRow(installation)
+            }
+        }
+    }
+
+    // MARK: Actions
+
+    @ViewBuilder
+    private func actionsRow(_ installation: SkillInstallation) -> some View {
+        HStack(spacing: 12) {
+            SkillEnableToggle(installation: installation, store: store, showsLabel: true)
+
+            if store.canUninstall(installation) {
+                Button("Uninstall…", role: .destructive) {
+                    confirmingUninstall = true
+                }
+                .disabled(store.isScanning)
+            }
+
+            Spacer()
+        }
+        .padding(.top, 4)
+        .confirmationDialog(
+            "Move \(installation.slug) to Loadout's shelf?",
+            isPresented: $confirmingUninstall,
+            titleVisibility: .visible
+        ) {
+            Button("Move to Shelf", role: .destructive) {
+                Task { await store.uninstall(installation) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The files are kept and this can be reverted from History.")
         }
     }
 
