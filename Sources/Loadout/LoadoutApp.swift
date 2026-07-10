@@ -61,7 +61,14 @@ struct LoadoutApp: App {
         // WellKnownAdapter (the /.well-known/skills convention) stays unwired
         // until a real site serves an index — add per-site instances here.
         return RegistryStore(
-            adapters: [SkillsShAdapter(), ClawHubAdapter()],
+            adapters: [
+                GitMarketplaceAdapter(
+                    remoteURL: URL(string: "https://github.com/cardinalblue/skills.git")!,
+                    displayName: "Cardinal Blue"
+                ),
+                SkillsShAdapter(),
+                ClawHubAdapter(),
+            ],
             library: SkillLibrary(),
             journal: journal
         )
