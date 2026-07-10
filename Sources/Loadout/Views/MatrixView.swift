@@ -58,13 +58,11 @@ struct MatrixView: View {
     var body: some View {
         Group {
             if rows.isEmpty {
-                ContentUnavailableView(
-                    "No Skills",
+                LedgerEmptyState(
                     systemImage: "square.grid.2x2",
-                    description: Text("Nothing matches the current filter or search.")
+                    title: "No skills",
+                    detail: "Nothing matches the current filter or search."
                 )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Ledger.paper)
             } else {
                 ledger
             }
@@ -78,7 +76,10 @@ struct MatrixView: View {
                     SectionHeader(
                         title: group.bucket.title,
                         count: group.rows.count,
-                        isFirst: index == 0
+                        isFirst: index == 0,
+                        // The first header carries the column legend that caps
+                        // the per-agent toggle columns below it.
+                        legendAgents: index == 0 ? agents : []
                     )
                     ForEach(group.rows) { row in
                         LedgerRow(
@@ -105,11 +106,14 @@ struct MatrixView: View {
 // MARK: - Section heading
 
 /// Serif section heading with a trailing count — the editorial rhythm from the
-/// mockup, without the old hairline rule or uppercase aside label.
+/// mockup, without the old hairline rule or uppercase aside label. The first
+/// header additionally right-aligns a quiet column legend naming the agent
+/// toggle columns, so the per-agent switches below read as labeled columns.
 private struct SectionHeader: View {
     let title: String
     let count: Int
     let isFirst: Bool
+    var legendAgents: [AgentID] = []
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -121,8 +125,20 @@ private struct SectionHeader: View {
                 .foregroundStyle(Ledger.quieter)
                 .monospacedDigit()
             Spacer(minLength: 8)
+
+            if !legendAgents.isEmpty {
+                Text(legendAgents.map(\.displayName).joined(separator: " · "))
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .textCase(.uppercase)
+                    .tracking(0.5)
+                    .foregroundStyle(Ledger.quieter)
+                    .lineLimit(1)
+                    // Sit over the toggle cluster, not the status words: skip
+                    // the status slot plus the row's inter-cluster spacing.
+                    .padding(.trailing, 96 + 14)
+            }
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, Ledger.Space.rowH)
         .padding(.bottom, 6)
         .padding(.top, isFirst ? 0 : Ledger.Space.beforeHeading)
         .padding(.bottom, Ledger.Space.afterHeading)

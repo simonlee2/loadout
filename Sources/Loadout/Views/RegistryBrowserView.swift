@@ -26,33 +26,28 @@ struct RegistryBrowserView: View {
     @ViewBuilder
     private var content: some View {
         if state.isLoading && state.skills.isEmpty {
-            ProgressView("Loading skills…")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Ledger.paper)
+            LedgerEmptyState(title: "Loading skills…") {
+                ProgressView()
+                    .controlSize(.small)
+            }
         } else if let error = state.error, state.skills.isEmpty {
-            ContentUnavailableView {
-                Label("Couldn't Load Registry", systemImage: "exclamationmark.triangle")
-            } description: {
-                Text(error)
-            } actions: {
+            LedgerEmptyState(
+                systemImage: "exclamationmark.triangle",
+                title: "Couldn't load this registry",
+                detail: error
+            ) {
                 Button("Retry") {
                     Task { await loadContent(force: true) }
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Ledger.paper)
         } else if state.skills.isEmpty {
-            ContentUnavailableView(
-                searchText.isEmpty ? "No Featured Skills" : "No Results",
+            LedgerEmptyState(
                 systemImage: "shippingbox",
-                description: Text(
-                    searchText.isEmpty
-                        ? "This registry has nothing to show yet."
-                        : "No skills match “\(searchText)”."
-                )
+                title: searchText.isEmpty ? "No featured skills" : "No results",
+                detail: searchText.isEmpty
+                    ? "This registry has nothing to show yet."
+                    : "No skills match “\(searchText)”."
             )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Ledger.paper)
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
@@ -133,15 +128,17 @@ private struct RegistrySkillRow: View {
                 HStack(spacing: 10) {
                     if let count = skill.installCount {
                         Text(RegistryFormat.installs(count))
-                            .font(.system(size: 11, design: .monospaced))
+                            .font(.system(size: 11))
+                            .monospacedDigit()
                             .foregroundStyle(Ledger.quieter)
                     }
                     if let version = skill.version {
                         Text(version)
-                            .font(.system(size: 11, design: .monospaced))
+                            .font(.system(size: 11))
+                            .monospacedDigit()
                             .foregroundStyle(Ledger.quieter)
                     }
-                    AuditChip(status: skill.audit)
+                    AuditWord(status: skill.audit)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -185,13 +182,11 @@ struct RegistryDetailView: View {
             RegistrySkillDetail(skill: skill, store: store)
                 .id(skill.id)
         } else {
-            ContentUnavailableView(
-                "No Skill Selected",
+            LedgerEmptyState(
                 systemImage: "sidebar.right",
-                description: Text("Select a skill from the registry to see its details.")
+                title: "Nothing selected",
+                detail: "Select a skill from the registry."
             )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Ledger.paper)
         }
     }
 }
@@ -213,14 +208,14 @@ private struct RegistrySkillDetail: View {
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
                     }
-                    HStack(spacing: 6) {
+                    HStack(spacing: 8) {
                         RegistryChip(text: skill.registry, symbol: "shippingbox")
                         if let version = skill.version {
                             RegistryChip(text: version)
                         }
-                        AuditChip(status: skill.audit)
+                        AuditWord(status: skill.audit)
                     }
-                    RegistryInstallControl(skill: skill, store: store)
+                    RegistryInstallControl(skill: skill, store: store, prominent: true)
                         .padding(.top, 4)
                 }
 
@@ -256,7 +251,9 @@ private struct RegistrySkillDetail: View {
                         Text("Source").font(Ledger.serifHeading(15)).foregroundStyle(Ledger.ink)
                         Link(destination: url) {
                             Label(url.absoluteString, systemImage: "link")
+                                .foregroundStyle(Ledger.accent)
                         }
+                        .tint(Ledger.accent)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     }
@@ -295,6 +292,8 @@ private struct RegistrySkillDetail: View {
 struct RegistryInstallControl: View {
     let skill: RegistrySkill
     let store: RegistryStore
+    /// Detail pane wants the teal prominent button; rows stay quietly bordered.
+    var prominent = false
 
     @State private var showingPopover = false
     @State private var chosenAgents: Set<AgentID> = Set(AgentID.allCases)
@@ -308,6 +307,13 @@ struct RegistryInstallControl: View {
         } else if store.isInstalling(skill) {
             ProgressView()
                 .controlSize(.small)
+        } else if prominent {
+            Button("Install…") { showingPopover = true }
+                .buttonStyle(.borderedProminent)
+                .tint(Ledger.accent)
+                .popover(isPresented: $showingPopover, arrowEdge: .bottom) {
+                    popover
+                }
         } else {
             Button("Install…") { showingPopover = true }
                 .popover(isPresented: $showingPopover, arrowEdge: .bottom) {
@@ -367,29 +373,29 @@ struct RegistryChip: View {
     }
 }
 
-/// Green "Passed" / orange "Flagged" pill; hidden when unknown or absent.
-struct AuditChip: View {
+/// Audit result as a quiet ledger status word — sage "passed" / orange
+/// "flagged", no capsule fill; hidden when unknown or absent.
+struct AuditWord: View {
     let status: AuditStatus?
 
     var body: some View {
         switch status {
         case .passed:
-            chip("Passed", color: .green, symbol: "checkmark.shield")
+            word("passed", tint: Ledger.sage)
         case .flagged:
-            chip("Flagged", color: .orange, symbol: "exclamationmark.shield")
+            word("flagged", tint: Ledger.orange)
         case .unknown, nil:
             EmptyView()
         }
     }
 
-    private func chip(_ text: String, color: Color, symbol: String) -> some View {
-        Label(text, systemImage: symbol)
-            .labelStyle(.titleAndIcon)
-            .font(.caption)
-            .foregroundStyle(color)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(color.opacity(0.15), in: Capsule())
+    private func word(_ text: String, tint: Color) -> some View {
+        Text(text)
+            .font(.system(size: 10.5, weight: .semibold))
+            .textCase(.uppercase)
+            .tracking(0.7)
+            .foregroundStyle(tint)
+            .lineLimit(1)
     }
 }
 

@@ -34,16 +34,13 @@ struct ProjectView: View {
         VStack(spacing: 0) {
             header
             if visibleStates.isEmpty {
-                ContentUnavailableView(
-                    searchText.isEmpty ? "No Skills" : "No Results",
+                LedgerEmptyState(
                     systemImage: "folder",
-                    description: Text(
-                        searchText.isEmpty
-                            ? "No skills are visible inside this project."
-                            : "No skills match “\(searchText)”."
-                    )
+                    title: searchText.isEmpty ? "No skills" : "No results",
+                    detail: searchText.isEmpty
+                        ? "No skills are visible inside this project."
+                        : "No skills match “\(searchText)”."
                 )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ledger
             }
@@ -266,13 +263,11 @@ struct ProjectDetailColumn: View {
                     .id(state.id)
             }
         } else {
-            ContentUnavailableView(
-                "No Skill Selected",
+            LedgerEmptyState(
                 systemImage: "sidebar.right",
-                description: Text("Select a skill from the project to see its details.")
+                title: "Nothing selected",
+                detail: "Select a skill from the project."
             )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Ledger.paper)
         }
     }
 }
@@ -330,10 +325,8 @@ private struct CompactSkillDetail: View {
             case .loaded(.missing):
                 Label("SKILL.md could not be read.", systemImage: "doc.questionmark")
                     .foregroundStyle(.secondary)
-            case .loaded(.attributed(let attributed)):
-                Text(attributed)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            case .loaded(.blocks(let blocks)):
+                SkillDocView(blocks: blocks)
             case .loaded(.plain(let raw)):
                 Text(raw)
                     .font(.body.monospaced())

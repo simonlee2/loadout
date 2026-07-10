@@ -162,7 +162,7 @@ struct ContentView: View {
                 }
             }
             .background(Ledger.paper.ignoresSafeArea())
-            .navigationSplitViewColumnWidth(min: 320, ideal: 380, max: 400)
+            .navigationSplitViewColumnWidth(min: 320, ideal: 440, max: 520)
         }
         .preferredColorScheme(snapshotColorScheme)
         .overlay {
@@ -230,32 +230,23 @@ struct ContentView: View {
                 }
             }
             ToolbarItem(placement: .primaryAction) {
+                // One refresh affordance: rescan the inventory, then kick a
+                // non-blocking update check so statuses fill in as it resolves.
                 Button {
-                    Task { await store.rescan() }
+                    Task {
+                        await store.rescan()
+                        Task { await registryStore.checkForUpdates() }
+                    }
                 } label: {
-                    if store.isScanning {
+                    if store.isScanning || registryStore.isCheckingUpdates {
                         ProgressView()
                             .controlSize(.small)
                     } else {
-                        Label("Rescan", systemImage: "arrow.clockwise")
+                        Label("Refresh", systemImage: "arrow.clockwise")
                     }
                 }
-                .disabled(store.isScanning)
-                .help("Rescan for installed skills")
-            }
-            ToolbarItem(placement: .automatic) {
-                Button {
-                    Task { await registryStore.checkForUpdates() }
-                } label: {
-                    if registryStore.isCheckingUpdates {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
-                        Label("Check for Updates", systemImage: "arrow.triangle.2.circlepath")
-                    }
-                }
-                .disabled(registryStore.isCheckingUpdates)
-                .help("Check for updates")
+                .disabled(store.isScanning || registryStore.isCheckingUpdates)
+                .help("Rescan installed skills and check for updates")
             }
             ToolbarItem(placement: .automatic) {
                 Button {
@@ -505,8 +496,8 @@ struct ContentView: View {
         }
         await settle() // let DetailView finish rendering the loaded document
         snapshot("step6-detail-swiftui-patterns.png")
-        let detailOK = loadStatus == "attributed"
-        record(6, "select swiftui-patterns detail load", expected: "\"attributed\"", actual: "\"\(loadStatus)\"", pass: detailOK)
+        let detailOK = loadStatus == "blocks"
+        record(6, "select swiftui-patterns detail load", expected: "\"blocks\"", actual: "\"\(loadStatus)\"", pass: detailOK)
 
         // Step 7: rescan — count stable, no scan errors.
         await store.rescan()
@@ -520,7 +511,7 @@ struct ContentView: View {
         // Step 8: final summary of core invariants.
         let coreOK = baseline == 26 && afterRescan == 26 && noErrors && detailOK
         let summary = "\"baseline=\(baseline) claude=\(claudeCount) codex=\(codexCount) system=\(systemCount) ios=\(iosCount) detail=\(loadStatus) afterRescan=\(afterRescan) errors=\(store.scanErrors.count)\""
-        record(8, "final summary", expected: "\"26/21/5/5/attributed/no-errors\"", actual: summary, pass: coreOK)
+        record(8, "final summary", expected: "\"26/21/5/5/blocks/no-errors\"", actual: summary, pass: coreOK)
 
         NSApp.terminate(nil)
     }

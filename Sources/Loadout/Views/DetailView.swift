@@ -13,13 +13,11 @@ struct DetailView: View {
             SkillDetailView(row: row, store: store, registryStore: registryStore)
                 .id(row.id)
         } else {
-            ContentUnavailableView(
-                "No Skill Selected",
+            LedgerEmptyState(
                 systemImage: "sidebar.right",
-                description: Text("Select a skill from the matrix to see its details.")
+                title: "Nothing selected",
+                detail: "Select a skill to read its SKILL.md."
             )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Ledger.paper)
         }
     }
 }
@@ -28,13 +26,13 @@ struct DetailView: View {
 private enum DocumentState {
     case loading
     case missing
-    case attributed(AttributedString)
+    case blocks([DocBlock])
     case plain(String)
 
     init(_ document: SkillDocument) {
         switch document {
         case .missing: self = .missing
-        case .attributed(let value): self = .attributed(value)
+        case .blocks(let value): self = .blocks(value)
         case .plain(let value): self = .plain(value)
         }
     }
@@ -135,10 +133,12 @@ private struct SkillDetailView: View {
             Text(row.displayName)
                 .font(.system(size: 22, weight: .semibold, design: .serif))
                 .foregroundStyle(Ledger.ink)
-            Text(row.slug)
-                .font(.callout)
-                .foregroundStyle(Ledger.quiet)
-                .textSelection(.enabled)
+            if row.slug != row.displayName {
+                Text(row.slug)
+                    .font(.callout)
+                    .foregroundStyle(Ledger.quiet)
+                    .textSelection(.enabled)
+            }
 
             FlowChips(installations: row.installations)
 
@@ -163,50 +163,45 @@ private struct SkillDetailView: View {
 
     // MARK: Actions
 
-    /// Whether any secondary action exists, so the second row is only emitted
-    /// when it would have content.
-    private func hasSecondaryActions(_ installation: SkillInstallation) -> Bool {
-        canAdopt || store.canUninstall(installation) || registryStore.collectionAvailable
+    /// Whether the overflow menu has anything to show.
+    private func hasMenuActions(_ installation: SkillInstallation) -> Bool {
+        store.canUninstall(installation) || registryStore.collectionAvailable
     }
 
     @ViewBuilder
     private func actionsRow(_ installation: SkillInstallation) -> some View {
-        // Two-row layout so nothing truncates in the narrow detail column:
-        // row 1 = the enabled toggle + the primary "Review Update"; row 2 =
-        // the secondary actions. Labels stay full-width.
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 12) {
-                SkillEnableToggle(installation: installation, store: store, showsLabel: true)
+        // One quiet row: the enabled toggle, the primary "Review Update" when
+        // one is pending, plain "Adopt & Sync…", and an overflow menu for the
+        // rarer collection/shelf actions.
+        HStack(spacing: 12) {
+            SkillEnableToggle(installation: installation, store: store, showsLabel: true)
 
-                if let update = availableUpdate {
-                    Button {
-                        reviewingUpdate = true
-                    } label: {
-                        Label("Review Update \(RowStatus.shortVersion(update))", systemImage: "arrow.down.circle")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Ledger.accent)
+            if let update = availableUpdate {
+                Button {
+                    reviewingUpdate = true
+                } label: {
+                    Label("Review Update \(RowStatus.shortVersion(update))", systemImage: "arrow.down.circle")
                 }
-
-                Spacer(minLength: 0)
+                .buttonStyle(.borderedProminent)
+                .tint(Ledger.accent)
             }
 
-            if hasSecondaryActions(installation) {
-                HStack(spacing: 12) {
-                    if canAdopt {
-                        Button("Adopt & Sync…") {
-                            adopting = true
-                        }
-                        .disabled(store.isScanning)
-                    }
+            if canAdopt {
+                Button("Adopt & Sync…") {
+                    adopting = true
+                }
+                .disabled(store.isScanning)
+            }
 
-                    if store.canUninstall(installation) {
-                        Button("Uninstall…", role: .destructive) {
-                            confirmingUninstall = true
-                        }
-                        .disabled(store.isScanning)
-                    }
+            Spacer(minLength: 0)
 
+            if publishing {
+                ProgressView()
+                    .controlSize(.small)
+            }
+
+            if hasMenuActions(installation) {
+                Menu {
                     if registryStore.collectionAvailable {
                         Button {
                             publishing = true
@@ -215,18 +210,25 @@ private struct SkillDetailView: View {
                                 publishing = false
                             }
                         } label: {
-                            if publishing {
-                                ProgressView().controlSize(.small)
-                            } else {
-                                Label("Add to My Collection", systemImage: "icloud.and.arrow.up")
-                            }
+                            Label("Add to My Collection", systemImage: "icloud.and.arrow.up")
                         }
                         .disabled(publishing)
-                        .help("Publish this skill's files to your iCloud collection")
                     }
 
-                    Spacer(minLength: 0)
+                    if store.canUninstall(installation) {
+                        Button("Move to Shelf…", role: .destructive) {
+                            confirmingUninstall = true
+                        }
+                        .disabled(store.isScanning)
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
                 }
+                .menuStyle(.button)
+                .buttonStyle(.borderless)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("More actions")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -288,10 +290,8 @@ private struct SkillDetailView: View {
             case .missing:
                 Label("SKILL.md could not be read.", systemImage: "doc.questionmark")
                     .foregroundStyle(.secondary)
-            case .attributed(let attributed):
-                Text(attributed)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            case .blocks(let blocks):
+                SkillDocView(blocks: blocks)
             case .plain(let raw):
                 Text(raw)
                     .font(.body.monospaced())
@@ -432,14 +432,12 @@ private struct FlowChips: View {
     var body: some View {
         HStack(spacing: 6) {
             ForEach(installations) { installation in
+                // Origin only — the enabled toggle just below is the state,
+                // so the chip doesn't repeat it.
                 HStack(spacing: 4) {
                     Text(installation.agent.monogram)
                         .fontWeight(.bold)
                     Text(installation.origin.label)
-                    Text("·")
-                        .foregroundStyle(Ledger.quieter)
-                    Text(installation.isEnabled ? "On" : "Off")
-                        .foregroundStyle(installation.isEnabled ? Ledger.sage : Ledger.quiet)
                 }
                 .font(.caption)
                 .foregroundStyle(Ledger.inkSoft)

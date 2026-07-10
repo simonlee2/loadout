@@ -86,7 +86,7 @@ struct ClaudeCodeConfigWriter: AgentConfigWriter {
 
         let change = try journal.recordDirectoryMove(
             agent: agent,
-            summary: "Uninstall \(installation.slug) for Claude Code",
+            summary: "Move \(installation.slug) to the shelf for Claude Code",
             directory: installation.directory
         )
 

@@ -41,7 +41,7 @@ enum Ledger {
     static let accentInk = dynamic(light: 0x0D5A5A, dark: 0x6CC3BC)
     /// Sage green — "synced".
     static let sage = dynamic(light: 0x5B8A57, dark: 0x8BB583)
-    /// Warm orange — "update" / "differs".
+    /// Warm orange — reserved for drift: "differs" and scan warnings.
     static let orange = dynamic(light: 0xC26B23, dark: 0xE09250)
 
     // MARK: Spacing
@@ -97,40 +97,38 @@ extension NSColor {
 // MARK: - Status word
 
 extension RowStatus {
-    /// The small-caps ledger word for this status, and its tint. `nil` means the
-    /// row shows no status word (single-agent / uncomparable rows stay quiet).
-    var ledgerWord: (text: String, tint: Color)? {
+    /// The small-caps ledger word for this status, and its tint. Every row
+    /// carries a word so the status column reads down the whole ledger:
+    /// update leads to the teal Review Update action, so it shares the accent;
+    /// orange is reserved for drift ("differs"); single-agent / uncomparable
+    /// rows read as a colorless "local".
+    var ledgerWord: (text: String, tint: Color) {
         switch self {
-        case .update(let display): ("update \(display)", Ledger.orange)
+        case .update(let display): ("update \(display)", Ledger.accent)
         case .synced: ("synced", Ledger.sage)
         case .differs: ("differs", Ledger.orange)
         case .managed: ("managed", Ledger.accent)
-        case .agentOnly, .unknown: nil
+        case .agentOnly, .unknown: ("local", Ledger.quieter)
         }
     }
 }
 
-/// A quiet small-caps status word, color only when meaningful. Renders an empty
-/// fixed-width slot for statuses with no word so trailing clusters stay aligned.
+/// A quiet small-caps status word, color only when meaningful. Fixed width so
+/// trailing clusters stay aligned down the ledger.
 struct LedgerStatusLabel: View {
     let status: RowStatus
     var width: CGFloat = 96
 
     var body: some View {
-        Group {
-            if let word = status.ledgerWord {
-                Text(word.text)
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .textCase(.uppercase)
-                    .tracking(0.7)
-                    .foregroundStyle(word.tint)
-                    .monospacedDigit()
-                    .lineLimit(1)
-            } else {
-                Color.clear.frame(height: 1)
-            }
-        }
-        .frame(width: width, alignment: .trailing)
+        let word = status.ledgerWord
+        Text(word.text)
+            .font(.system(size: 10.5, weight: .semibold))
+            .textCase(.uppercase)
+            .tracking(0.7)
+            .foregroundStyle(word.tint)
+            .monospacedDigit()
+            .lineLimit(1)
+            .frame(width: width, alignment: .trailing)
     }
 }
 
