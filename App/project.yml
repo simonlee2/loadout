@@ -33,7 +33,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.simonlee.Loadout
         PRODUCT_NAME: Loadout
-        MARKETING_VERSION: "0.2.0"
+        MARKETING_VERSION: "0.3.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "6.0"
         # Ad-hoc signing so the app builds without a developer account. When
@@ -58,7 +58,7 @@ targets:
       path: Info-generated.plist
       properties:
         CFBundleDisplayName: Loadout
-        CFBundleShortVersionString: "0.2.0"
+        CFBundleShortVersionString: "0.3.0"
         CFBundleVersion: "1"
         LSApplicationCategoryType: public.app-category.developer-tools
         LSMinimumSystemVersion: "15.0"
